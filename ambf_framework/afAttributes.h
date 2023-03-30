@@ -432,6 +432,8 @@ public:
     // Identification attribs. Is used to determine what type of object this is (Rigid Body, Soft Body, Sensor, etc.)
     afIdentificationAttributes m_identificationAttribs;
 
+    afHierarchyAttributes m_hierarchyAttribs;
+
     afCommunicationAttributes m_communicationAttribs;
 
     vector<afPluginAttributes> m_pluginAttribs;
@@ -474,7 +476,6 @@ public:
 
     afActuatorType m_actuatorType;
     afKinematicAttributes m_kinematicAttribs;
-    afHierarchyAttributes m_hierarchyAttribs;
 };
 
 
@@ -571,7 +572,6 @@ public:
     afImageResolutionAttribs m_publishDephtResolution;
     afNoiseModelAttribs m_depthNoiseAttribs;
 
-    afHierarchyAttributes m_hierarchyAttribs;
     afKinematicAttributes m_kinematicAttribs;
 
     virtual void resolveRelativePathAttribs(afPath a_parentPath){
@@ -604,7 +604,6 @@ public:
 
     afShadowQualityType m_shadowQuality;
 
-    afHierarchyAttributes m_hierarchyAttribs;
     afKinematicAttributes m_kinematicAttribs;
 };
 
@@ -689,7 +688,6 @@ public:
     bool m_enableLimits;
     bool m_ignoreInterCollision;
 
-    afHierarchyAttributes m_hierarchyAttribs;
     afJointControllerAttributes m_controllerAttribs;
 };
 
@@ -864,7 +862,6 @@ public:
 
     afCollisionAttributes m_collisionAttribs;
     afKinematicAttributes m_kinematicAttribs;
-    afHierarchyAttributes m_hierarchyAttribs;
     afVisualAttributes m_visualAttribs;
 
     virtual void resolveRelativePathAttribs(afPath a_parentPath){
@@ -976,7 +973,6 @@ struct afVolumeAttributes: public afBaseObjectAttributes{
     }
 
     afKinematicAttributes m_kinematicAttribs;
-    afHierarchyAttributes m_hierarchyAttribs;
     afVolumeSpecificationType m_specificationType;
     afMultiImagesAttributes m_multiImageAttribs;
     afShaderAttributes m_shaderAttribs;
@@ -1005,7 +1001,6 @@ public:
 
     afSensorType m_sensorType;
     afKinematicAttributes m_kinematicAttribs;
-    afHierarchyAttributes m_hierarchyAttribs;
 };
 
 

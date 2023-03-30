@@ -1416,6 +1416,7 @@ bool ADFLoader_1_0::loadRigidBodyAttribs(YAML::Node *a_node, afRigidBodyAttribut
     ADFUtils::getIdentificationAttribsFromNode(a_node, &attribs->m_identificationAttribs);
     ADFUtils::getVisualAttribsFromNode(a_node, &attribs->m_visualAttribs);
     ADFUtils::getKinematicAttribsFromNode(a_node, &attribs->m_kinematicAttribs);
+    ADFUtils::getHierarchyAttribsFromNode(a_node, &attribs->m_hierarchyAttribs);
     ADFUtils::getCollisionAttribsFromNode(a_node, &attribs->m_collisionAttribs);
     ADFUtils::getInertialAttrisFromNode(a_node, &attribs->m_inertialAttribs);
     ADFUtils::getCartControllerAttribsFromNode(a_node, &attribs->m_controllerAttribs);

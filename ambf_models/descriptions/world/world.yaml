@@ -57,6 +57,13 @@ camera1:
   clipping plane: {near: 0.1, far: 10.0}
   field view angle: 0.8
   monitor: 0
+  # plugins: [
+  #   {
+  #     name: VIDEO_STREAMING,
+  #     path: /home/adnanmunawar/ambf-ar/build/,
+  #     filename: libobject_video_recording.so
+  #   }
+  # ]
   # multipass: True
   # publish image: True
   # preprocessing shaders:

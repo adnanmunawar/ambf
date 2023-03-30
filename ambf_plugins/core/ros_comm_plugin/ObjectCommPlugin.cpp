@@ -1,4 +1,6 @@
 #include "ObjectCommPlugin.h"
+#include <afConversions.h>
+#include "Utilities.h"
 
 void afRigidBodyState::setChildrenNames(afRigidBodyPtr afRBPtr){
     int num_children = afRBPtr->m_CJ_PairsActive.size();
@@ -323,16 +325,7 @@ void afObjectCommunicationPlugin::actuatorFetchCommand(afActuatorPtr actPtr, dou
                 string body_name = cmd.body_name.data;
                 if (cmd.use_offset){
                     // Offset of constraint (joint) in sensed body (child)
-                    btTransform T_jINc;
-                    T_jINc.setOrigin(btVector3(cmd.body_offset.position.x,
-                                               cmd.body_offset.position.y,
-                                               cmd.body_offset.position.z));
-
-                    T_jINc.setRotation(btQuaternion(cmd.body_offset.orientation.x,
-                                                    cmd.body_offset.orientation.y,
-                                                    cmd.body_offset.orientation.z,
-                                                    cmd.body_offset.orientation.w));
-                    castPtr->actuate(body_name, T_jINc);
+                    castPtr->actuate(body_name, bullet::toTransform(cmd.body_offset));
                 }
                 else{
                     castPtr->actuate(body_name);
@@ -569,130 +562,83 @@ void afObjectCommunicationPlugin::lightUpdateState(afLightPtr lightPtr, double d
 void afObjectCommunicationPlugin::rigidBodyFetchCommand(afRigidBodyPtr afRBPtr, double dt)
 {
     btRigidBody* btRBPtr = afRBPtr->m_bulletRigidBody;
-    btVector3 force, torque;
     ambf_msgs::RigidBodyCmd afCommand = m_rigidBodyCommPtr->get_command();
 
     // IF THE COMMAND IS OF TYPE FORCE
     switch (afCommand.cartesian_cmd_type) {
     case ambf_msgs::RigidBodyCmd::TYPE_FORCE:{
         afRBPtr->m_activeControllerType = afControlType::FORCE;
-        if (afRBPtr->m_bulletRigidBody){
-            force.setValue(afCommand.wrench.force.x,
-                           afCommand.wrench.force.y,
-                           afCommand.wrench.force.z);
-
-            torque.setValue(afCommand.wrench.torque.x,
-                            afCommand.wrench.torque.y,
-                            afCommand.wrench.torque.z);
-
-            afRBPtr->m_bulletRigidBody->applyCentralForce(force);
-            afRBPtr->m_bulletRigidBody->applyTorque(torque);
+        afRBPtr->setLocalForce(chai3d::toVector(afCommand.wrench.force));
+        afRBPtr->setLocalTorque(chai3d::toVector(afCommand.wrench.torque));
         }
-    }
         break;
     case ambf_msgs::RigidBodyCmd::TYPE_POSITION:{
         afRBPtr->m_activeControllerType = afControlType::POSITION;
         // If the body is kinematic, we just want to control the position
+        cTransform Tcommand = chai3d::toTransform(afCommand.pose);
         if (btRBPtr->isStaticOrKinematicObject()){
-            btTransform Tcommand;
-            Tcommand.setOrigin(btVector3(afCommand.pose.position.x,
-                                         afCommand.pose.position.y,
-                                         afCommand.pose.position.z));
 
-            Tcommand.setRotation(btQuaternion(afCommand.pose.orientation.x,
-                                              afCommand.pose.orientation.y,
-                                              afCommand.pose.orientation.z,
-                                              afCommand.pose.orientation.w));
-
-            //                If the current pose is the same as before, ignore. Otherwise, update pose and collision AABB.
-            if ((btRBPtr->getWorldTransform().getOrigin() - Tcommand.getOrigin()).norm() > 0.00001 ||
-                    btRBPtr->getWorldTransform().getRotation().angleShortestPath(Tcommand.getRotation()) > 0.0001){
-                // Compensate for the inertial offset
-                Tcommand = Tcommand * afRBPtr->getInertialOffsetTransform();
-                //                    cerr << "Updating Static Object Pose \n";
-                btRBPtr->getMotionState()->setWorldTransform(Tcommand);
-                btRBPtr->setWorldTransform(Tcommand);
-            }
+            // cerr << "Updating Static Object Pose \n";
+            afRBPtr->setLocalTransform(Tcommand);
 
         }
         else{
-            btVector3 cur_pos, cmd_pos;
-            btQuaternion cmd_rot_quat = btQuaternion(afCommand.pose.orientation.x,
-                                                     afCommand.pose.orientation.y,
-                                                     afCommand.pose.orientation.z,
-                                                     afCommand.pose.orientation.w);
-
-            btMatrix3x3 cur_rot, cmd_rot;
-            btTransform b_trans;
-            b_trans = afRBPtr->getCOMTransform();
-
-            cur_pos = b_trans.getOrigin();
-            cur_rot.setRotation(b_trans.getRotation());
-            cmd_pos.setValue(afCommand.pose.position.x,
-                             afCommand.pose.position.y,
-                             afCommand.pose.position.z);
-            if( cmd_rot_quat.length() < 0.9 || cmd_rot_quat.length() > 1.1 ){
+            cTransform Tcurr = afRBPtr->getLocalTransform();
+            cQuaternion quat;
+            quat.fromRotMat(Tcurr.getLocalRot());
+            if( abs(1.0 - quat.length()) < 0.1){
                 cerr << "WARNING: BODY \"" << afRBPtr->getName() << "'s\" rotation quaternion command"
                                                         " not normalized" << endl;
-                if (cmd_rot_quat.length() < 0.1){
-                    cmd_rot_quat.setW(1.0); // Invalid Quaternion
-                }
+                cMatrix3d rotMat;
+                quat.normalize();
+                quat.toRotMat(rotMat);
+                Tcurr.setLocalRot(rotMat);
             }
-            cmd_rot.setRotation(cmd_rot_quat);
 
-            btVector3 pCommand, rCommand;
+            cVector3d pCommand, rCommand;
             // Use the internal Cartesian Position Controller to Compute Output
-            pCommand = afRBPtr->m_controller.computeOutput<btVector3>(cur_pos, cmd_pos, dt);
+            pCommand = afRBPtr->m_controller.computeOutput<cVector3d>(Tcurr.getLocalPos(), Tcommand.getLocalPos(), dt);
             // Use the internal Cartesian Rotation Controller to Compute Output
-            rCommand = afRBPtr->m_controller.computeOutput<btVector3>(cur_rot, cmd_rot, dt);
+            rCommand = afRBPtr->m_controller.computeOutput<cVector3d>(Tcurr.getLocalRot(), Tcommand.getLocalRot(), dt);
 
             if (afRBPtr->m_controller.m_positionOutputType == afControlType::FORCE){
                 // IF PID GAINS WERE DEFINED, USE THE PID CONTROLLER
                 // Use the internal Cartesian Position Controller
-                btRBPtr->applyCentralForce(pCommand);
-                btRBPtr->applyTorque(rCommand);
+                afRBPtr->setLocalForce(pCommand);
+                afRBPtr->setLocalTorque(rCommand);
             }
             else{
                 // ELSE USE THE VELOCITY INTERFACE
-                btRBPtr->setLinearVelocity(pCommand);
-                btRBPtr->setAngularVelocity(rCommand);
+                afRBPtr->setLocalLinearVelocity(pCommand);
+                afRBPtr->setLocalAngularVelocity(rCommand);
             }
         }
     }
         break;
     case ambf_msgs::RigidBodyCmd::TYPE_VELOCITY:{
-        btVector3 lin_vel, ang_vel;
+        cVector3d lin_vel, ang_vel;
         afRBPtr->m_activeControllerType = afControlType::VELOCITY;
         if (btRBPtr){
-            lin_vel.setValue(afCommand.twist.linear.x,
-                             afCommand.twist.linear.y,
-                             afCommand.twist.linear.z);
-
-            ang_vel.setValue(afCommand.twist.angular.x,
-                             afCommand.twist.angular.y,
-                             afCommand.twist.angular.z);
+            lin_vel = chai3d::toVector(afCommand.twist.linear);
+            ang_vel= chai3d::toVector(afCommand.twist.angular);
 
             // If the body is kinematic, we just want to control the position
             if (btRBPtr->isStaticOrKinematicObject()){
-                btTransform Tcommand, Tcurrent;
-                Tcurrent = afRBPtr->getCOMTransform();
-                btVector3 posCmd = Tcurrent.getOrigin() + lin_vel * dt;
-                btVector3 rotCmd = ang_vel * dt;
-                btQuaternion rotQ;
-                rotQ.setEulerZYX(rotCmd.z(), rotCmd.y(), rotCmd.x());
-                Tcommand.setOrigin(posCmd);
-
-                Tcommand.setRotation(rotQ * Tcurrent.getRotation());
+                cTransform Tcommand, Tcurrent;
+                Tcurrent = afRBPtr->getLocalTransform();
+                cVector3d posCmd = Tcurrent.getLocalPos() + lin_vel * dt;
+                cVector3d rotCmd = ang_vel * dt;
+                cMatrix3d rotQ;
+                rotQ.setExtrinsicEulerRotationRad(rotCmd.x(), rotCmd.y(), rotCmd.z(), C_EULER_ORDER_XYZ);
+                Tcommand.setLocalPos(posCmd);
+                Tcommand.setLocalRot(rotQ * Tcurrent.getLocalRot());
 
                 // Compensate for the inertial offset
-                Tcommand = Tcommand * afRBPtr->getInertialOffsetTransform();
-                btRBPtr->getMotionState()->setWorldTransform(Tcommand);
-                btRBPtr->setWorldTransform(Tcommand);
+                afRBPtr->setLocalTransform(Tcommand);
 
             }
             else{
-                btRBPtr->setLinearVelocity(lin_vel);
-                btRBPtr->setAngularVelocity(ang_vel);
+                afRBPtr->setLocalTwist(lin_vel, ang_vel);
             }
         }
     }
@@ -734,7 +680,6 @@ void afObjectCommunicationPlugin::rigidBodyUpdateState(afRigidBodyPtr afRBPtr, d
 {
     m_rigidBodyCommPtr->m_writeMtx.lock();
     setTimeStamps(m_objectPtr->m_afWorld->getWallTime(), m_objectPtr->m_afWorld->getSimulationTime(), m_objectPtr->getCurrentTimeStamp());
-    btRigidBody* btRBPtr = afRBPtr->m_bulletRigidBody;
     cQuaternion q;
     q.fromRotMat(afRBPtr->m_visualMesh->getLocalRot());
 
@@ -744,13 +689,13 @@ void afObjectCommunicationPlugin::rigidBodyUpdateState(afRigidBodyPtr afRBPtr, d
     m_rigidBodyCommPtr->cur_orientation(q.x, q.y, q.z, q.w);
 
     // Update the Wrench
-    btVector3 force = afRBPtr->m_estimatedForce;
-    btVector3 torque = afRBPtr->m_estimatedTorque;
+    cVector3d force = afRBPtr->m_estimatedForce;
+    cVector3d torque = afRBPtr->m_estimatedTorque;
     m_rigidBodyCommPtr->cur_force(force.x(), force.y(), force.z());
     m_rigidBodyCommPtr->cur_torque(torque.x(), torque.y(), torque.z());
 
-    btVector3 v = btRBPtr->getLinearVelocity();
-    btVector3 a = btRBPtr->getAngularVelocity();
+    cVector3d v = afRBPtr->getLocalLinearVelocity();
+    cVector3d a = afRBPtr->getLocalAngularVelocity();
 
     // Updated the Twist
     m_rigidBodyCommPtr->cur_linear_velocity(v.x(), v.y(), v.z());
@@ -760,7 +705,7 @@ void afObjectCommunicationPlugin::rigidBodyUpdateState(afRigidBodyPtr afRBPtr, d
     // out intermittently
     if (m_write_count % afRBPtr->m_afWorld->m_updateCounterLimit == 0){
         m_rigidBodyCommPtr->set_mass(afRBPtr->getMass());
-        btVector3 inertia = afRBPtr->getInertia();
+        cVector3d inertia = to_cVector3d(afRBPtr->getInertia());
         m_rigidBodyCommPtr->set_principal_inertia(inertia.x(), inertia.y(), inertia.z());
     }
 
@@ -918,12 +863,8 @@ void afObjectCommunicationPlugin::vehicleFetchCommand(afVehiclePtr vehPtr, doubl
 
 
     // Apply forces and torques on the chassis
-    btVector3 force(af_cmd.chassis_wrench.force.x,
-                    af_cmd.chassis_wrench.force.y,
-                    af_cmd.chassis_wrench.force.z);
-    btVector3 torque(af_cmd.chassis_wrench.torque.x,
-                     af_cmd.chassis_wrench.torque.y,
-                     af_cmd.chassis_wrench.torque.z);
+    cVector3d force = chai3d::toVector(af_cmd.chassis_wrench.force);
+    cVector3d torque = chai3d::toVector(af_cmd.chassis_wrench.torque);
 
     if (force.length() > 0.0){
         vehPtr->setChassisForce(force);
@@ -948,7 +889,7 @@ void afObjectCommunicationPlugin::vehicleUpdateState(afVehiclePtr vehPtr, double
     if (m_write_count % vehPtr->m_afWorld->m_updateCounterLimit == 0){
         m_vehicleCommPtr->set_wheel_count(vehPtr->getWheelCount());
         m_vehicleCommPtr->set_mass(vehPtr->getMass());
-        btVector3 inertia = vehPtr->getInertia();
+        cVector3d inertia = to_cVector3d(vehPtr->getInertia());
         m_vehicleCommPtr->set_principal_inertia(inertia.x(), inertia.y(), inertia.z());
     }
     m_vehicleCommPtr->m_writeMtx.unlock();

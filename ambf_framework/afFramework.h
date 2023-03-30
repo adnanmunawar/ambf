@@ -541,7 +541,7 @@ public:
     virtual bool loadPlugins(afBaseObjectPtr objPtr, afBaseObjectAttribsPtr attribs, vector<afPluginAttributes>* pluginAttribs);
 
     // The update method called at every simulation iteration.
-    virtual void update(double dt);
+    virtual void update(double dt){}
 
     virtual void reset();
 
@@ -567,6 +567,8 @@ public:
     inline cTransform getInitialTransform(){return m_initialTransform;}
 
     inline afBaseObjectPtr getParentObject(){return m_parentObject;}
+
+    inline cTransform getParentGlobalTransform();
 
     void setLocalPos(const cVector3d &pos);
 
@@ -622,6 +624,8 @@ public:
     void pluginsPhysicsUpdate(double dt);
 
     void pluginsReset();
+
+    virtual void updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform = cTransform());
 
     virtual void updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform = cTransform());
 
@@ -935,6 +939,12 @@ public:
     // Get Center of Mass Transform
     btTransform getCOMTransform();
 
+    // Get Center of Mass Transform
+    btTransform getLocalCOMTransform();
+
+    // Get Center of Mass Transform
+    btTransform getGlobalCOMTransform();
+
     afSurfaceAttributes getSurfaceProperties();
 
     inline void setMass(double a_mass){m_mass = a_mass;}
@@ -992,8 +1002,36 @@ public:
 
     virtual void setLocalTransform(const cTransform &trans);
 
+    virtual void setLocalLinearVelocity(const cVector3d &vel);
+
+    virtual void setLocalAngularVelocity(const cVector3d &vel);
+
+    virtual void setLocalTwist(const cVector3d &linear, const cVector3d &angular);
+
+    virtual void setLocalForce(const cVector3d &force, const cVector3d &offset = cVector3d(0,0,0));
+
+    virtual void setLocalTorque(const cVector3d &torque);
+
+    virtual void setGlobalCOMTransform(const cTransform &trans);
+
+    virtual void setGlobalLinearVelocity(const cVector3d &vel);
+
+    virtual void setGlobalAngularVelocity(const cVector3d &vel);
+
+    virtual cVector3d getLocalLinearVelocity();
+
+    virtual cVector3d getLocalAngularVelocity();
+
+    virtual void setGlobalForce(const cVector3d &force, const cVector3d &offset = cVector3d(0,0,0));
+
+    virtual void setGlobalTorque(const cVector3d &torque);
+
     // This method updates the AMBF position representation from the Bullet dynamics engine.
     virtual void update(double dt);
+
+    virtual void updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform = cTransform());
+
+    virtual void updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform);
 
     virtual void reset();
 
@@ -1047,10 +1085,10 @@ public:
     afCartesianController m_controller;
 
     // Estimated Force acting on body
-    btVector3 m_estimatedForce;
+    cVector3d m_estimatedForce;
 
     // Estimated Torque acting on body
-    btVector3 m_estimatedTorque;
+    cVector3d m_estimatedTorque;
 
     // Toggle publishing of joint positions
     bool m_publish_joint_positions = false;
@@ -1198,7 +1236,11 @@ public:
 
     virtual void setLocalTransform(const cTransform &trans);
 
+    virtual void setGlobalCOMTransform(const cTransform &trans);
+
     virtual void updateSceneObjects();
+
+    virtual void reset();
 
     bool cleanupMesh(cMultiMesh* multiMesh, std::vector<afVertexTree>& a_afVertexTree, std::vector<unsigned int>& a_triangles);
 
@@ -2505,6 +2547,8 @@ public:
 
     virtual void update(double dt);
 
+    virtual void updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform);
+
     inline int getWheelCount(){return m_numWheels;}
 
     btRaycastVehicle* getInternalVehicle(){return m_vehicle;}
@@ -2521,9 +2565,9 @@ public:
 
     void setWheelSteering(int i, double s);
 
-    void setChassisForce(btVector3 force);
+    void setChassisForce(cVector3d force);
 
-    void setChassisTorque(btVector3 torque);
+    void setChassisTorque(cVector3d torque);
 
 protected:
     btDefaultVehicleRaycaster* m_vehicleRayCaster = nullptr;

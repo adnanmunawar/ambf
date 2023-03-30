@@ -965,9 +965,6 @@ bool afBaseObject::loadPlugins(afBaseObjectPtr objPtr, afBaseObjectAttribsPtr at
     return true;
 }
 
-void afBaseObject::update(double dt){
-}
-
 void afBaseObject::reset()
 {
     setLocalTransform(getInitialTransform());
@@ -1014,6 +1011,14 @@ double afBaseObject::getWallTime(){
 
 double afBaseObject::getSimulationTime(){
     return m_afWorld->getSimulationTime();
+}
+
+cTransform afBaseObject::getParentGlobalTransform(){
+    cTransform T_p_w;
+    if (getParentObject() != nullptr){
+        T_p_w = getParentObject()->getGlobalTransform();
+    }
+    return T_p_w;
 }
 
 
@@ -1326,6 +1331,9 @@ void afBaseObject::pluginsReset()
     m_pluginManager.reset();
 }
 
+void afBaseObject::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
+}
+
 
 ///
 /// \brief afBaseObject::updateGlobalPose
@@ -1334,7 +1342,7 @@ void afBaseObject::pluginsReset()
 ///
 void afBaseObject::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform){
     if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
-        // Don't update the pose as this object's parent is
+        // Don't update the pose as this object as the parent is
         // responsible for it.
         return;
     }
@@ -1992,8 +2000,36 @@ void afInertialObject::estimateInertia()
     }
 }
 
+///
+/// \brief afInertialObject::getCOMTransform
+/// \return
+///
 btTransform afInertialObject::getCOMTransform()
 {
+    // Inertial Transform
+    return getLocalCOMTransform();
+}
+
+
+///
+/// \brief afInertialObject::getLocalCOMTransform
+/// \return
+///
+btTransform afInertialObject::getLocalCOMTransform(){
+    // Inertial Transform
+    btTransform T_w_p; T_w_p.setIdentity();
+    if (m_parentObject){
+        T_w_p << m_parentObject->getGlobalTransform();
+        T_w_p = T_w_p.inverse();
+    }
+    return (T_w_p * getGlobalCOMTransform());
+}
+
+///
+/// \brief afInertialObject::getGlobalCOMTransform
+/// \return
+///
+btTransform afInertialObject::getGlobalCOMTransform(){
     // Inertial Transform
     btTransform T_iINw;
     m_bulletRigidBody->getMotionState()->getWorldTransform(T_iINw);
@@ -2579,6 +2615,12 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
     setMaxPublishFrequency(a_attribs->m_communicationAttribs.m_maxPublishFreq);
     setPassive(a_attribs->m_communicationAttribs.m_passive);
 
+    m_parentName = a_attribs->m_hierarchyAttribs.m_parentName;
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
+
     addChildSceneObject(m_visualMesh, cTransform());
     addChildSceneObject(m_collisionMesh, cTransform());
     m_afWorld->m_bulletWorld->addRigidBody(m_bulletRigidBody);
@@ -2651,9 +2693,50 @@ void afRigidBody::estimateCartesianControllerGains(afCartesianController &contro
 ///
 void afRigidBody::update(double dt)
 {
-    if (m_bulletRigidBody)
-    {
-        m_localTransform << getCOMTransform();
+    updateLocalPose(false, cTransform());
+}
+
+void afRigidBody::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform){
+    if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
+        // Don't update the pose as this object as the parent is
+        // responsible for it.
+        return;
+    }
+
+    if (m_bulletRigidBody->isStaticOrKinematicObject()){
+        m_globalTransform = a_parentTransform * m_localTransform;
+    }
+    else{
+        m_globalTransform << getGlobalCOMTransform();
+    }
+
+    vector<afBaseObjectPtr>::const_iterator it;
+
+    for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
+        (*it)->updateGlobalPose(true, m_globalTransform);
+    }
+}
+
+void afRigidBody::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
+    if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
+        // Don't update the pose as this object as the parent is
+        // responsible for it.
+        return;
+    }
+    cTransform parentInverseTransform = a_parentTransform; parentInverseTransform.invert();
+    cTransform localTransform = parentInverseTransform * to_cTransform(getGlobalCOMTransform());
+
+    if (a_forceUpdate && m_bulletRigidBody->isStaticOrKinematicObject()){
+        setLocalTransform(m_localTransform);
+    }
+    else{
+        afBaseObject::setLocalTransform(localTransform);
+    }
+
+    vector<afBaseObjectPtr>::const_iterator it;
+
+    for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
+        (*it)->updateLocalPose(true, to_cTransform(getGlobalCOMTransform()));
     }
 }
 
@@ -2812,12 +2895,71 @@ afRigidBody::~afRigidBody(){
     }
 }
 
-void afRigidBody::setLocalTransform(const cTransform &trans)
-{
-    m_bulletMotionState->setWorldTransform(to_btTransform(trans));
-    m_bulletRigidBody->setCenterOfMassTransform(to_btTransform(trans));
-    cTransform com = trans * to_cTransform(getInverseInertialOffsetTransform());
-    afBaseObject::setLocalTransform(com);
+///
+/// \brief afRigidBody::setLocalTransform
+/// \param T_b_p
+///
+void afRigidBody::setLocalTransform(const cTransform &T_b_p){
+    setGlobalCOMTransform(getParentGlobalTransform() * T_b_p);
+    afBaseObject::setLocalTransform(T_b_p);
+}
+
+void afRigidBody::setLocalLinearVelocity(const cVector3d &vel){
+    setGlobalLinearVelocity(getParentGlobalTransform().getLocalRot() * vel);
+}
+
+void afRigidBody::setLocalAngularVelocity(const cVector3d &vel){
+    setGlobalAngularVelocity(getParentGlobalTransform().getLocalRot() * vel);
+}
+
+void afRigidBody::setLocalTwist(const cVector3d &linear, const cVector3d &angular){
+    setLocalLinearVelocity(linear);
+    setLocalAngularVelocity(angular);
+}
+
+void afRigidBody::setLocalForce(const cVector3d &force, const cVector3d &offset){
+    setGlobalForce(getParentGlobalTransform().getLocalRot() * force, offset);
+}
+
+void afRigidBody::setLocalTorque(const cVector3d &torque){
+    setGlobalTorque(getParentGlobalTransform().getLocalRot() * torque);
+}
+
+
+///
+/// \brief afRigidBody::setGlobalCOMTransform
+/// \param trans
+///
+void afRigidBody::setGlobalCOMTransform(const cTransform &T_b_w){
+    btTransform T_bi_w = to_btTransform(T_b_w) * getInertialOffsetTransform();
+    m_bulletMotionState->setWorldTransform(T_bi_w);
+    m_bulletRigidBody->setCenterOfMassTransform(T_bi_w);
+}
+
+void afRigidBody::setGlobalLinearVelocity(const cVector3d &vel){
+    m_bulletRigidBody->setLinearVelocity(to_btVector(vel));
+}
+
+void afRigidBody::setGlobalAngularVelocity(const cVector3d &vel){
+    m_bulletRigidBody->setAngularVelocity(to_btVector(vel));
+}
+
+cVector3d afRigidBody::getLocalLinearVelocity(){
+    return cTranspose(getParentGlobalTransform().getLocalRot())
+            * to_cVector3d(m_bulletRigidBody->getLinearVelocity());
+}
+
+cVector3d afRigidBody::getLocalAngularVelocity(){
+    return cTranspose(getParentGlobalTransform().getLocalRot())
+            * to_cVector3d(m_bulletRigidBody->getAngularVelocity());
+}
+
+void afRigidBody::setGlobalForce(const cVector3d &force, const cVector3d &offset){
+    m_bulletRigidBody->applyForce(to_btVector(force), to_btVector(offset));
+}
+
+void afRigidBody::setGlobalTorque(const cVector3d &torque){
+    m_bulletRigidBody->applyTorque(to_btVector(torque));
 }
 
 
@@ -3343,6 +3485,11 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     setIdentifier(a_attribs->m_identifier);
     setName(a_attribs->m_identificationAttribs.m_name);
     setNamespace(a_attribs->m_identificationAttribs.m_namespace);
+    m_parentName = a_attribs->m_hierarchyAttribs.m_parentName;
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
 
     m_scale = a_attribs->m_kinematicAttribs.m_scale;
 
@@ -3507,9 +3654,12 @@ void afSoftBody::createInertialObject()
     m_bulletSoftBody->setUserPointer(this);
 }
 
-void afSoftBody::setLocalTransform(const cTransform &trans)
-{
-    m_bulletSoftBody->transform(to_btTransform(trans));
+void afSoftBody::setLocalTransform(const cTransform &T_b_p){
+    setGlobalCOMTransform(getParentGlobalTransform() * T_b_p);
+}
+
+void afSoftBody::setGlobalCOMTransform(const cTransform &T_b_w){
+    m_bulletSoftBody->transform(to_btTransform(T_b_w));
 }
 
 void afSoftBody::toggleSkeletalModelVisibility(){
@@ -3539,6 +3689,11 @@ void afSoftBody::updateSceneObjects(){
 
     mesh->computeAllNormals();
     afBaseObject::updateSceneObjects();
+}
+
+void afSoftBody::reset(){
+    setLocalTransform(m_initialTransform);
+    cerr << "INFO! RESETTING SOFTBODY TRANSFORM!" << endl;
 }
 
 bool afSoftBody::cleanupMesh(cMultiMesh *multiMesh, std::vector<afVertexTree> &a_afVertexTree, std::vector<unsigned int> &a_triangles)
@@ -5999,8 +6154,8 @@ void afWorld::estimateBodyWrenches(){
     afBaseObjectMap::iterator rbIt = getRigidBodyMap()->begin();
     for (; rbIt != getRigidBodyMap()->end() ; ++rbIt){
         afRigidBodyPtr rb = (afRigidBodyPtr)rbIt->second;
-        rb->m_estimatedForce.setZero();
-        rb->m_estimatedTorque.setZero();
+        rb->m_estimatedForce = cVector3d(0., 0., 0.);
+        rb->m_estimatedTorque = cVector3d(0., 0., 0.);
     }
 
 
@@ -6016,14 +6171,14 @@ void afWorld::estimateBodyWrenches(){
             btVector3 F_jINp = R_wINp * fb->m_appliedForceBodyA;
             btVector3 F_jINc = R_wINc * fb->m_appliedForceBodyB;
 
-            jnt->m_afParentBody->m_estimatedForce += F_jINp;
-            jnt->m_afChildBody->m_estimatedForce += F_jINc;
+            jnt->m_afParentBody->m_estimatedForce += to_cVector3d(F_jINp);
+            jnt->m_afChildBody->m_estimatedForce += to_cVector3d(F_jINc);
 
             btVector3 T_jINp = R_wINp * fb->m_appliedTorqueBodyA;
             btVector3 T_jINc = R_wINc * fb->m_appliedTorqueBodyB;
 
-            jnt->m_afParentBody->m_estimatedTorque += T_jINp;
-            jnt->m_afChildBody->m_estimatedTorque += T_jINc;
+            jnt->m_afParentBody->m_estimatedTorque += to_cVector3d(T_jINp);
+            jnt->m_afChildBody->m_estimatedTorque += to_cVector3d(T_jINc);
 
             // We can also estimate the joint effort using the parent axes.
             if (jnt->m_jointType == afJointType::REVOLUTE || jnt->m_jointType == afJointType::TORSION_SPRING){
@@ -6585,7 +6740,7 @@ bool afWorld::pickBody(const cVector3d &rayFromWorld, const cVector3d &rayToWorl
                 }
 
                 //other exclusions?
-                if (!(body->isStaticObject() || body->isKinematicObject()))
+                if (!(body->isStaticOrKinematicObject()))
                 {
                     //printf("pickPos=%f,%f,%f\n",pickPos.getX(),pickPos.getY(),pickPos.getZ());
                     btVector3 localPivot = body->getCenterOfMassTransform().inverse() * to_btVector(pickPos);
@@ -6676,8 +6831,16 @@ bool afWorld::movePickedBody(const cVector3d &rayFromWorld, const cVector3d &ray
             // In this case the rigidBody is a static or kinematic body
             btTransform curTrans = m_pickedBulletRigidBody->getWorldTransform();
             curTrans.setOrigin(to_btVector(newLocation + m_pickedOffset));
-            m_pickedBulletRigidBody->getMotionState()->setWorldTransform(curTrans);
-            m_pickedBulletRigidBody->setWorldTransform(curTrans);
+//            m_pickedBulletRigidBody->getMotionState()->setWorldTransform(curTrans);
+//            m_pickedBulletRigidBody->setWorldTransform(curTrans);
+
+            afRigidBodyPtr afRB = getRigidBody(m_pickedBulletRigidBody);
+            btTransform T_p_w; T_p_w.setIdentity();
+            if (afRB->getParentObject()){
+                    T_p_w << afRB->getParentObject()->getGlobalTransform();
+            }
+//            afRB->m_localTransform = to_cTransform(T_p_w.inverse() * curTrans);
+            afRB->setLocalTransform(to_cTransform(T_p_w.inverse() * curTrans));
             return true;
         }
     }
@@ -8293,8 +8456,7 @@ afVehicle::afVehicle(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialObj
 }
 
 afVehicle::~afVehicle()
-{
-    if (m_vehicleRayCaster != nullptr){
+{    if (m_vehicleRayCaster != nullptr){
         delete m_vehicleRayCaster;
     }
 
@@ -8315,6 +8477,11 @@ bool afVehicle::createFromAttribs(afVehicleAttributes *a_attribs)
     setIdentifier(a_attribs->m_identifier);
     setName(a_attribs->m_identificationAttribs.m_name);
     setNamespace(a_attribs->m_identificationAttribs.m_namespace);
+    m_parentName = a_attribs->m_hierarchyAttribs.m_parentName;
+
+    if (m_parentName.empty() == false){
+        m_afWorld->addObjectMissingParent(this);
+    }
 
     setMinPublishFrequency(a_attribs->m_communicationAttribs.m_minPublishFreq);
     setMaxPublishFrequency(a_attribs->m_communicationAttribs.m_maxPublishFreq);
@@ -8455,13 +8622,13 @@ void afVehicle::setWheelSteering(int i, double s){
     m_vehicle->setSteeringValue(s, i);
 }
 
-void afVehicle::setChassisForce(btVector3 force){
-    m_chassis->m_bulletRigidBody->applyCentralForce(force);
+void afVehicle::setChassisForce(cVector3d force){
+    m_chassis->m_bulletRigidBody->applyCentralForce(to_btVector(force));
 //    applyForce(force);
 }
 
-void afVehicle::setChassisTorque(btVector3 torque){
-    m_chassis->m_bulletRigidBody->applyTorque(torque);
+void afVehicle::setChassisTorque(cVector3d torque){
+    m_chassis->m_bulletRigidBody->applyTorque(to_btVector(torque));
 //    applyTorque(torque);
 }
 
@@ -8471,6 +8638,7 @@ void afVehicle::setChassisTorque(btVector3 torque){
 ///
 void afVehicle::update(double dt){
     for (uint i = 0; i < m_numWheels ; i++){
+        m_vehicle->getChassisWorldTransform();
         m_vehicle->updateWheelTransform(i, true);
         btTransform btTrans = m_vehicle->getWheelInfo(i).m_worldTransform;
         cTransform cTrans;
@@ -8485,8 +8653,13 @@ void afVehicle::update(double dt){
         else{
             // We have an invalid wheel. Skip.
         }
+        m_localTransform << m_chassis->getLocalCOMTransform();
 
     }
+}
+
+void afVehicle::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
+
 }
 
 
