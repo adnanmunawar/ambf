@@ -1116,6 +1116,8 @@ bool afBaseObject::addChildObject(afBaseObjectPtr a_afObject)
     //    a_afObject->clearParentObject();
     a_afObject->setParentObject(this);
     m_childrenObjects.push_back(a_afObject);
+    updateGlobalPose(false);
+    a_afObject->reset();
     return true;
 }
 
