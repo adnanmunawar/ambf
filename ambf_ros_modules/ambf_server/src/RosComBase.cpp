@@ -52,8 +52,12 @@
 #include "ambf_msgs/ObjectState.h"
 #include "ambf_msgs/RigidBodyCmd.h"
 #include "ambf_msgs/RigidBodyState.h"
+#include "ambf_msgs/GhostObjectCmd.h"
+#include "ambf_msgs/GhostObjectState.h"
 #include "ambf_msgs/SensorCmd.h"
 #include "ambf_msgs/SensorState.h"
+#include "ambf_msgs/ContactSensorState.h"
+#include "ambf_msgs/ContactSensorCmd.h"
 #include "ambf_msgs/VehicleCmd.h"
 #include "ambf_msgs/VehicleState.h"
 #include "ambf_msgs/WorldCmd.h"
@@ -92,7 +96,9 @@ template void RosComBase<ambf_msgs::CameraState, ambf_msgs::CameraCmd>::cleanUp(
 template void RosComBase<ambf_msgs::LightState, ambf_msgs::LightCmd>::cleanUp();
 template void RosComBase<ambf_msgs::ObjectState, ambf_msgs::ObjectCmd>::cleanUp();
 template void RosComBase<ambf_msgs::RigidBodyState, ambf_msgs::RigidBodyCmd>::cleanUp();
+template void RosComBase<ambf_msgs::GhostObjectState, ambf_msgs::GhostObjectCmd>::cleanUp();
 template void RosComBase<ambf_msgs::SensorState, ambf_msgs::SensorCmd>::cleanUp();
+template void RosComBase<ambf_msgs::ContactSensorState, ambf_msgs::ContactSensorCmd>::cleanUp();
 template void RosComBase<ambf_msgs::VehicleState, ambf_msgs::VehicleCmd>::cleanUp();
 template void RosComBase<ambf_msgs::WorldState, ambf_msgs::WorldCmd>::cleanUp();
 
@@ -101,6 +107,8 @@ template RosComBase<ambf_msgs::CameraState, ambf_msgs::CameraCmd>::RosComBase(st
 template RosComBase<ambf_msgs::LightState, ambf_msgs::LightCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
 template RosComBase<ambf_msgs::ObjectState, ambf_msgs::ObjectCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
 template RosComBase<ambf_msgs::RigidBodyState, ambf_msgs::RigidBodyCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
+template RosComBase<ambf_msgs::GhostObjectState, ambf_msgs::GhostObjectCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
 template RosComBase<ambf_msgs::SensorState, ambf_msgs::SensorCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
+template RosComBase<ambf_msgs::ContactSensorState, ambf_msgs::ContactSensorCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
 template RosComBase<ambf_msgs::VehicleState, ambf_msgs::VehicleCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);
 template RosComBase<ambf_msgs::WorldState, ambf_msgs::WorldCmd>::RosComBase(std::string a_name, std::string a_namespace, int a_freq_min, int a_freq_max, double time_out);

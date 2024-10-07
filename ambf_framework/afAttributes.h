@@ -53,6 +53,12 @@ typedef unsigned int uint;
 
 namespace ambf {
 
+enum class afStatusFlag{
+    UNDEFINED,
+    TRUE,
+    FALSE,
+};
+
 ///
 /// \brief The afKinematicAttributes struct
 ///
@@ -294,6 +300,7 @@ struct afInertialAttributes{
 public:
     afInertialAttributes(){
         m_mass = 1.0;
+        m_overrideGravity = false;
         m_estimateInertia = true;
         m_estimateInertialOffset = true;
     }
@@ -302,6 +309,8 @@ public:
 
     double m_mass;
     afVector3d m_inertia;
+    afVector3d m_gravity;
+    bool m_overrideGravity;
     bool m_estimateInertia;
     afTransform m_inertialOffset;
     afSurfaceAttributes m_surfaceAttribs;
@@ -359,9 +368,11 @@ struct afColorAttributes{
 struct afVisualAttributes{
     afVisualAttributes(){
         m_visible = true;
+        m_meshRemoveDuplicates = afStatusFlag::UNDEFINED;
     }
 
     afPath m_meshFilepath;
+    afStatusFlag m_meshRemoveDuplicates;
     afGeometryType m_geometryType;
     vector<afPrimitiveShapeAttributes> m_primitiveShapes;
     afColorAttributes m_colorAttribs;
@@ -523,6 +534,21 @@ struct afNoiseModelAttribs{
     double m_bias;
 };
 
+struct afMouseControlScales{
+public:
+    afMouseControlScales(){
+        m_pan = 0.01;
+        m_rotate = 0.3;
+        m_arcball = 0.03;
+        m_scroll = 0.1;
+    }
+
+    double m_pan;
+    double m_rotate;
+    double m_scroll;
+    double m_arcball;
+};
+
 ///
 /// \brief The afCameraAttributes struct
 ///
@@ -566,6 +592,7 @@ public:
     uint m_publishDepthInterval;
     afShaderAttributes m_preProcessShaderAttribs;
     afShaderAttributes m_depthComputeShaderAttribs;
+    afMouseControlScales m_mouseControlScales;
     bool m_multiPass;
 
     afImageResolutionAttribs m_publishImageResolution;
@@ -596,10 +623,18 @@ public:
     afLightAttributes(){
         m_spotExponent = 0.7;
         m_cuttoffAngle = 0.7;
+        m_constantAttenuation = 1.0;
+        m_linearAttenuation = 0.0;
+        m_quadraticAttenuation = 0.0;
+        m_attenuationDefined = false;
     }
 
     double m_spotExponent;
     double m_cuttoffAngle;
+    double m_constantAttenuation;
+    double m_linearAttenuation;
+    double m_quadraticAttenuation;
+    bool m_attenuationDefined;
     afVector3d m_direction;
 
     afShadowQualityType m_shadowQuality;
@@ -628,7 +663,9 @@ public:
         m_equilibriumPoint = 0.0;
         m_ignoreInterCollision = true;
         m_erp = 0.1;
+        m_override_erp = false;
         m_cfm = 0.1;
+        m_override_cfm = false;
     }
 
     struct afConeTwistLimits{
@@ -673,7 +710,9 @@ public:
     afSixDofLimits m_sixDofLimits;
     afSixDofSpringAttribs m_sixDofSpringAttribs;
     double m_erp;
+    bool m_override_erp;
     double m_cfm;
+    bool m_override_cfm;
     // Rotational offset of joint along the free joint axis
     double m_jointOffset;
     // Rotation offset of child along the free joint axis
@@ -1064,6 +1103,22 @@ public:
 };
 
 
+struct afContactSensorAttributes: public afSensorAttributes{
+public:
+    afContactSensorAttributes(){
+        m_distanceThreshold = 0.0;
+        m_processContactDetails = true;
+        m_visible = false;
+        m_visibleSize = 10;
+    }
+
+    double m_distanceThreshold; // Distance threshold between objects for contact to count
+    bool m_processContactDetails; // If true, process contact ponits, normals, etc. Otherwise just names of objects in contact
+    bool m_visible;
+    double m_visibleSize;
+};
+
+
 struct afFileObjectAttributes{
 public:
     afFileObjectAttributes(){}
@@ -1078,6 +1133,7 @@ public:
     afModelAttributes(){
         m_ignoreInterCollision = false;
         m_enableComm = true;
+        m_overrideGravity = false;
     }
     ~afModelAttributes(){
 //        for (int i = 0 ; i < m_sensorAttribs.size() ; i++){
@@ -1093,6 +1149,8 @@ public:
     afShaderAttributes m_shaderAttribs;
 
     bool m_enableComm;
+    bool m_overrideGravity;
+    afVector3d m_gravity;
 
     vector <afRigidBodyAttributes> m_rigidBodyAttribs;
     vector <afSoftBodyAttributes> m_softBodyAttribs;

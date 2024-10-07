@@ -231,7 +231,49 @@ btCollisionShape *afShapeUtils::createCollisionShape(const afPrimitiveShapeAttri
     return collisionShape;
 }
 
-btCollisionShape* afShapeUtils::createCollisionShape(const cMesh *a_collisionMesh,
+
+///
+/// \brief cMeshTObtTriangleMesh
+/// \param a_mesh
+/// \return
+///
+btTriangleMesh* cMeshTObtTriangleMesh(const cMesh* a_mesh){
+
+    // bullet mesh
+    btTriangleMesh* bulletMesh = new btTriangleMesh();
+
+    // read number of indices of the object
+    unsigned int numIndices = a_mesh->m_triangles->getNumElements();
+
+    // add all indices to Bullet model
+    for (unsigned int i=0; i<numIndices; i++)
+    {
+        unsigned int vertexIndex0 = a_mesh->m_triangles->getVertexIndex0(i);
+        unsigned int vertexIndex1 = a_mesh->m_triangles->getVertexIndex1(i);
+        unsigned int vertexIndex2 = a_mesh->m_triangles->getVertexIndex2(i);
+        bulletMesh->addTriangleIndices(vertexIndex0, vertexIndex1, vertexIndex2);
+    }
+
+    unsigned int numVertices = a_mesh->m_vertices->getNumElements();
+
+    for (unsigned int i=0; i<numVertices; i++)
+    {
+        cVector3d vertex = a_mesh->m_vertices->getLocalPos(i);
+        bulletMesh->findOrAddVertex(btVector3(vertex(0), vertex(1), vertex(2)), false);
+    }
+
+    return bulletMesh;
+}
+
+
+///
+/// \brief afShapeUtils::createCollisionShape
+/// \param a_collisionMesh
+/// \param a_margin
+/// \param a_meshType
+/// \return
+///
+btCollisionShape* afShapeUtils::createCollisionShape(cMesh *a_collisionMesh,
                                                      double a_margin,
                                                      afCollisionMeshShapeType a_meshType)
 {
@@ -239,59 +281,18 @@ btCollisionShape* afShapeUtils::createCollisionShape(const cMesh *a_collisionMes
     btCollisionShape* collisionShape;
 
     switch (a_meshType) {
-    case afCollisionMeshShapeType::CONCAVE_MESH:{
+    case afCollisionMeshShapeType::CONCAVE_MESH:
+    case afCollisionMeshShapeType::CONVEX_MESH:{
         // bullet mesh
-        btTriangleMesh* bulletMesh = new btTriangleMesh();
+        btTriangleMesh* bulletMesh = cMeshTObtTriangleMesh(a_collisionMesh);
 
-        // read number of triangles of the object
-        unsigned int numTriangles = a_collisionMesh->m_triangles->getNumElements();
-
-        // add all triangles to Bullet model
-        for (unsigned int i=0; i<numTriangles; i++)
-        {
-            unsigned int vertexIndex0 = a_collisionMesh->m_triangles->getVertexIndex0(i);
-            unsigned int vertexIndex1 = a_collisionMesh->m_triangles->getVertexIndex1(i);
-            unsigned int vertexIndex2 = a_collisionMesh->m_triangles->getVertexIndex2(i);
-
-            cVector3d vertex0 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex0);
-            cVector3d vertex1 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex1);
-            cVector3d vertex2 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex2);
-
-            bulletMesh->addTriangle(btVector3(vertex0(0), vertex0(1), vertex0(2)),
-                                    btVector3(vertex1(0), vertex1(1), vertex1(2)),
-                                    btVector3(vertex2(0), vertex2(1), vertex2(2)));
-        }
-
+        if (a_meshType == afCollisionMeshShapeType::CONCAVE_MESH){
         // create mesh collision model
         collisionShape = new btGImpactMeshShape(bulletMesh);
-        break;
-    }
-    case afCollisionMeshShapeType::CONVEX_MESH:{
-
-        // bullet mesh
-        btTriangleMesh* bulletMesh = new btTriangleMesh();
-
-        // read number of triangles of the object
-        unsigned int numTriangles = a_collisionMesh->m_triangles->getNumElements();
-
-        // add all triangles to Bullet model
-        for (unsigned int i=0; i<numTriangles; i++)
-        {
-            unsigned int vertexIndex0 = a_collisionMesh->m_triangles->getVertexIndex0(i);
-            unsigned int vertexIndex1 = a_collisionMesh->m_triangles->getVertexIndex1(i);
-            unsigned int vertexIndex2 = a_collisionMesh->m_triangles->getVertexIndex2(i);
-
-            cVector3d vertex0 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex0);
-            cVector3d vertex1 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex1);
-            cVector3d vertex2 = a_collisionMesh->m_vertices->getLocalPos(vertexIndex2);
-
-            bulletMesh->addTriangle(btVector3(vertex0(0), vertex0(1), vertex0(2)),
-                                    btVector3(vertex1(0), vertex1(1), vertex1(2)),
-                                    btVector3(vertex2(0), vertex2(1), vertex2(2)));
         }
-
-        // create mesh collision model
-        collisionShape = new btConvexTriangleMeshShape(bulletMesh);
+        else{
+            collisionShape = new btConvexTriangleMeshShape(bulletMesh);
+        }
         break;
     }
     case afCollisionMeshShapeType::CONVEX_HULL:{
@@ -312,7 +313,15 @@ btCollisionShape* afShapeUtils::createCollisionShape(const cMesh *a_collisionMes
 }
 
 
-btCompoundShape *afShapeUtils::createCollisionShape(const cMultiMesh *a_collisionMultiMesh,
+///
+/// \brief afShapeUtils::createCollisionShape
+/// \param a_collisionMultiMesh
+/// \param a_margin
+/// \param m_inertialOffset
+/// \param a_meshType
+/// \return
+///
+btCompoundShape *afShapeUtils::createCollisionShape(cMultiMesh *a_collisionMultiMesh,
                                                     double a_margin,
                                                     afTransform m_inertialOffset,
                                                     afCollisionMeshShapeType a_meshType){
@@ -323,76 +332,28 @@ btCompoundShape *afShapeUtils::createCollisionShape(const cMultiMesh *a_collisio
     inverseInertialOffsetTransform << m_inertialOffset.getInverse();
 
     switch (a_meshType) {
-    case afCollisionMeshShapeType::CONCAVE_MESH:{
-        // create collision detector for each mesh
-        std::vector<cMesh*>::iterator it;
-        for (it = a_collisionMultiMesh->m_meshes->begin(); it != a_collisionMultiMesh->m_meshes->end(); ++it)
-        {
-            cMesh* mesh = (*it);
-
-            // bullet mesh
-            btTriangleMesh* bulletMesh = new btTriangleMesh();
-
-            // read number of triangles of the object
-            unsigned int numTriangles = mesh->m_triangles->getNumElements();
-
-            // add all triangles to Bullet model
-            for (unsigned int i=0; i<numTriangles; i++)
-            {
-                unsigned int vertexIndex0 = mesh->m_triangles->getVertexIndex0(i);
-                unsigned int vertexIndex1 = mesh->m_triangles->getVertexIndex1(i);
-                unsigned int vertexIndex2 = mesh->m_triangles->getVertexIndex2(i);
-
-                cVector3d vertex0 = mesh->m_vertices->getLocalPos(vertexIndex0);
-                cVector3d vertex1 = mesh->m_vertices->getLocalPos(vertexIndex1);
-                cVector3d vertex2 = mesh->m_vertices->getLocalPos(vertexIndex2);
-
-                bulletMesh->addTriangle(btVector3(vertex0(0), vertex0(1), vertex0(2)),
-                                        btVector3(vertex1(0), vertex1(1), vertex1(2)),
-                                        btVector3(vertex2(0), vertex2(1), vertex2(2)));
-            }
-
-            // create mesh collision model
-            collisionShape = new btGImpactMeshShape(bulletMesh);
-            collisionShape->setMargin(a_margin);
-            ((btGImpactMeshShape*) collisionShape)->updateBound();
-            compoundCollisionShape->addChildShape(inverseInertialOffsetTransform, collisionShape);
-        }
-        break;
-    }
+    case afCollisionMeshShapeType::CONCAVE_MESH:
     case afCollisionMeshShapeType::CONVEX_MESH:{
         // create collision detector for each mesh
         std::vector<cMesh*>::iterator it;
         for (it = a_collisionMultiMesh->m_meshes->begin(); it != a_collisionMultiMesh->m_meshes->end(); ++it)
         {
             cMesh* mesh = (*it);
+            btTriangleMesh* bulletMesh = cMeshTObtTriangleMesh(mesh);
 
-            // bullet mesh
-            btTriangleMesh* bulletMesh = new btTriangleMesh();
-
-            // read number of triangles of the object
-            unsigned int numTriangles = mesh->m_triangles->getNumElements();
-
-            // add all triangles to Bullet model
-            for (unsigned int i=0; i<numTriangles; i++)
-            {
-                unsigned int vertexIndex0 = mesh->m_triangles->getVertexIndex0(i);
-                unsigned int vertexIndex1 = mesh->m_triangles->getVertexIndex1(i);
-                unsigned int vertexIndex2 = mesh->m_triangles->getVertexIndex2(i);
-
-                cVector3d vertex0 = mesh->m_vertices->getLocalPos(vertexIndex0);
-                cVector3d vertex1 = mesh->m_vertices->getLocalPos(vertexIndex1);
-                cVector3d vertex2 = mesh->m_vertices->getLocalPos(vertexIndex2);
-
-                bulletMesh->addTriangle(btVector3(vertex0(0), vertex0(1), vertex0(2)),
-                                        btVector3(vertex1(0), vertex1(1), vertex1(2)),
-                                        btVector3(vertex2(0), vertex2(1), vertex2(2)));
+            if (a_meshType == afCollisionMeshShapeType::CONCAVE_MESH){
+                // create mesh collision model
+                collisionShape = new btGImpactMeshShape(bulletMesh);
+                collisionShape->setMargin(a_margin);
+                ((btGImpactMeshShape*) collisionShape)->updateBound();
+                compoundCollisionShape->addChildShape(inverseInertialOffsetTransform, collisionShape);
             }
-
-            // create mesh collision model
-            collisionShape = new btConvexTriangleMeshShape(bulletMesh);
-            collisionShape->setMargin(a_margin);
-            compoundCollisionShape->addChildShape(inverseInertialOffsetTransform, collisionShape);
+            else{
+                // create mesh collision model
+                collisionShape = new btConvexTriangleMeshShape(bulletMesh);
+                collisionShape->setMargin(a_margin);
+                compoundCollisionShape->addChildShape(inverseInertialOffsetTransform, collisionShape);
+            }
         }
         break;
     }
@@ -420,16 +381,10 @@ btCompoundShape *afShapeUtils::createCollisionShape(const cMultiMesh *a_collisio
         for (it = a_collisionMultiMesh->m_meshes->begin(); it != a_collisionMultiMesh->m_meshes->end(); ++it)
         {
             cMesh* mesh = (*it);
-            std::vector<double> filteredVtx;
-            std::vector<uint> filterTri;
-            std::vector<afVertexTree> vtxTree;
-            afMeshCleanup::computeUniqueVerticesandTrianglesSequential(mesh, &filteredVtx, &filterTri, &vtxTree, nullptr, false);
-
-            int numVtx = filteredVtx.size() / 3;
-            for (uint i = 0 ; i < numVtx ; i++){
+            for (uint i = 0 ; i < mesh->m_vertices->getNumElements() ; i++){
                 collisionShape = new btSphereShape(a_margin);
                 btTransform lT;
-                btVector3 btPos(filteredVtx[i * 3 + 0], filteredVtx[i * 3 + 1], filteredVtx[i * 3 + 2]);
+                btVector3 btPos = to_btVector(mesh->m_vertices->getLocalPos(i));
                 lT.setOrigin(btPos);
                 compoundCollisionShape->addChildShape(inverseInertialOffsetTransform * lT, collisionShape);
             }
@@ -506,9 +461,18 @@ cMaterial afMaterialUtils::createFromAttribs(afColorAttributes *a_color)
 bool afVisualUtils::createFromAttribs(afVisualAttributes *attribs, cMultiMesh *mesh, string obj_name){
     if (attribs->m_geometryType == afGeometryType::MESH){
         if (mesh->loadFromFile(attribs->m_meshFilepath.c_str()) ){
-            //            mesh->scale(m_scale);
+            if (attribs->m_meshRemoveDuplicates == afStatusFlag::TRUE){
+                mesh->removeDuplicateVertices();
+            }
+//            else if (attribs->m_meshRemoveDuplicates == afStatusFlag::UNDEFINED){
+//                for (auto m : *(mesh->m_meshes)){
+//                    if (m->getNumVertices() > 10000){
+//                        double wd = 0.;
+//                        m->removeDuplicateVertices(wd);
+//                    }
+//                }
+//            }
             mesh->setUseDisplayList(true);
-            //            m_visualMesh->markForUpdate(false);
         }
         else{
             cerr << "WARNING! OBJECT "
@@ -535,8 +499,9 @@ bool afVisualUtils::createFromAttribs(afVisualAttributes *attribs, cMultiMesh *m
         // Important to set the transparency after setting the material, otherwise the alpha
         // channel ruins the Z-buffer depth testing in some way.
         mesh->setTransparencyLevel(attribs->m_colorAttribs.m_alpha);
-        mesh->setShowEnabled(attribs->m_visible);
     }
+
+    mesh->setShowEnabled(attribs->m_visible);
     return true;
 }
 
@@ -1954,6 +1919,7 @@ afInertialObject::afInertialObject(afType a_type, afWorldPtr a_afWorld, afModelP
     m_bulletSoftBody = nullptr;
     m_bulletCollisionShape = nullptr;
     m_bulletMotionState = nullptr;
+    m_overrideGravity = false;
 }
 
 
@@ -1999,6 +1965,14 @@ void afInertialObject::estimateInertia()
         // compute inertia
         m_bulletCollisionShape->calculateLocalInertia(m_mass, m_inertia);
 
+    }
+}
+
+void afInertialObject::setGravity(const cVector3d &a_gravity)
+{
+    if(m_bulletRigidBody){
+        m_bulletRigidBody->setGravity(to_btVector(a_gravity));
+        cerr << "INFO! SETTING " << m_name << "'s GRAVITY TO: " << a_gravity.str() << endl;
     }
 }
 
@@ -2513,6 +2487,7 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
 
     if (m_collisionGeometryType == afGeometryType::MESH){
         if (m_collisionMesh->loadFromFile(m_collisionMeshFilePath.c_str()) ){
+            m_collisionMesh->removeDuplicateVertices();
             m_collisionMesh->scale(m_scale);
             // Override the inertial offset if it is required by attribs
             if (a_attribs->m_inertialAttribs.m_estimateInertialOffset){
@@ -2627,6 +2602,12 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
     addChildSceneObject(m_collisionMesh, cTransform());
     m_afWorld->m_bulletWorld->addRigidBody(m_bulletRigidBody);
 
+    if (a_attribs->m_inertialAttribs.m_overrideGravity){
+        m_overrideGravity = true;
+        m_gravity << a_attribs->m_inertialAttribs.m_gravity;
+        setGravity(m_gravity);
+    }
+
     string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getRigidBodyMap());
     setGlobalRemapIdx(remap_idx);
 
@@ -2688,7 +2669,6 @@ void afRigidBody::estimateCartesianControllerGains(afCartesianController &contro
         controller.setAngularGains(P_ang, 0, D_ang);
     }
 }
-
 
 ///
 /// \brief afRigidBody::updatePositionFromDynamics
@@ -2752,6 +2732,9 @@ void afRigidBody::reset()
     m_bulletRigidBody->clearForces();
     m_bulletRigidBody->setLinearVelocity(zero);
     m_bulletRigidBody->setAngularVelocity(zero);
+    if (m_overrideGravity){
+        setGravity(m_gravity);
+    }
 //    cTransform T_i = getInitialTransform();
 //    setLocalTransform(T_i);
     afBaseObject::reset();
@@ -2993,486 +2976,6 @@ void afMeshCleanup::updateMaxs(cVector3d &vMax, cVector3d &v){
 
 
 ///
-/// \brief afMeshCleanup::clearArrays
-/// \param vtxChkBlock
-/// \param vtxIdxBlock
-/// \param blockSize
-///
-void afMeshCleanup::clearArrays(bool *vtxChkBlock, int *vtxIdxBlock, int blockSize){
-    int s = blockSize*blockSize*blockSize;
-    memset(vtxChkBlock, false, s*sizeof(bool)); // Initialize all the vtx check blocks to 0
-    memset(vtxIdxBlock, -1, s*sizeof(int)); // Initialize all the vtx index blocks to -1
-}
-
-
-///
-/// \brief afMeshCleanup::computeUniqueVerticesandTriangles
-/// \param mesh
-/// \param outputVertices
-/// \param outputTriangles
-/// \param a_vertexTrees
-/// \param outputLines
-/// \param print_debug_info
-///
-void afMeshCleanup::computeUniqueVerticesandTriangles(const cMesh *mesh, std::vector<double> *outputVertices, std::vector<uint> *outputTriangles, std::vector<afVertexTree>* a_vertexTrees, std::vector<std::vector<int> > *outputLines, bool print_debug_info)
-{
-    // read number of triangles of the object
-    int numTriangles = mesh->m_triangles->getNumElements();
-    int numVertices = mesh->m_vertices->getNumElements();
-
-    if (print_debug_info){
-        printf("# Triangles %d, # Vertices %d \n", numTriangles, numVertices);
-    }
-
-    // The max number of vertices to check per block
-    int vtxBlockSize = 1000;
-    // Number of default blocks
-    int numBlocks = 1;
-    //Define bound for lowest value of vertices
-    cVector3d vMin(9999,9999,9999);
-    //Define bound for max value of vertices
-    cVector3d vMax(-9999,-9999,-9999);
-    // Length of the bounds (max - min) for each x,y,z
-    cVector3d vBounds;
-
-    // Update the min and max value (x,y,z) of vertices to get bounds
-    for (int x = 0 ; x < numVertices ; x++){
-        cVector3d v = mesh->m_vertices->getLocalPos(x);
-        updateMins(vMin, v); // Iterative search to get the min distance
-        updateMaxs(vMax, v); // Iterative search to get the max distance
-    }
-    // Update magnitude of bound
-    vBounds = vMax - vMin;
-    if (print_debug_info){
-        printf("***************************************\n");
-        printf("Vmin = [%f, %f, %f] \n", vMin.x(), vMin.y(), vMin.z());
-        printf("Vmax = [%f, %f, %f] \n", vMax.x(), vMax.y(), vMax.z());
-        printf("VBounds = [%f, %f, %f] \n", vBounds.x(), vBounds.y(), vBounds.z());
-        printf("***************************************\n");
-    }
-    // Place holder for count of repeat and duplicate vertices
-    int uniqueVtxCount = 0;
-    int duplicateVtxCount = 0;
-
-    // If number of vertices is greater the vertices per block, increase no of blocks
-    // This is to prevent memory exhaustion
-    if (numVertices > vtxBlockSize){
-        numBlocks = std::ceil((float)numVertices / (float)vtxBlockSize);
-    }
-
-    if (print_debug_info){
-        printf("Using %d blocks \n", numBlocks);
-    }
-    // Copy over the vertices to process without altering the original data
-    auto vtxArrCopy = mesh->m_vertices->copy();
-    // This data-structure is to store the unaltered indices in the first row vertices referring to their
-    // original copy in the second row. The third row contains the indexes to the vertices after
-    // the unique vertices have been placed in the outputVertices array
-    // . E.g. if a vertex at idx 5 was a repeat of vtx at idx 3, orderedVtxList[5][0] = 5 ; orderedVtxList[5][1] = 3;
-    // and if the vertex was added to the array of unique vertices at Idx 2 then orderedVtxList[5][2] = 2;
-    int* orderedVtxList = new int [numVertices*3];
-    memset(orderedVtxList, -1, numVertices*3*sizeof(int));
-
-#define ordVtxIdx(a, b) (numVertices * b + a)
-
-    // This forms a 3D block with all value initiazlied to false
-    // If we visit a specific 3D idx, it's set to true to know that we have been there
-    bool* vtxChkBlock = new bool[vtxBlockSize*vtxBlockSize*vtxBlockSize];
-
-    int vtxBlockSizeSquare = vtxBlockSize * vtxBlockSize;
-
-#define vtxChkIdx(a, b, c) (vtxBlockSizeSquare * c + vtxBlockSize * b + a)
-    // This forms a 3D block with all values init to -1
-    // What ever 3D idx we visited we set the corresponding corrected idx value in this 3D block
-    int* vtxIdxBlock = new int[vtxBlockSize*vtxBlockSize*vtxBlockSize];
-    // To reduce computational cost, if we have already checked a vertex, we can mark it
-    bool* vtxAlreadyChkd = new bool[numVertices];
-    // Initialize all the vertex check index to false
-    memset(vtxAlreadyChkd, false, numVertices*sizeof(bool));
-    // Upper a lower bound for block in x direction
-    int xblockLowerBound;
-    int xblockUpperBound;
-    // Upper a lower bound for block in y direction
-    int yblockLowerBound;
-    int yblockUpperBound;
-    // Upper a lower bound for block in z direction
-    int zblockLowerBound;
-    int zblockUpperBound;
-
-    int vxKey; // X key to look up in the block
-    int vyKey; // Y key to look up in the block
-    int vzKey; // Z ket to look up in the block
-
-    double xRes; // X Resolution
-    double yRes; // Y Resolution
-    double zRes; // X Resolution
-
-    cVector3d vPos; // The position of a vertex
-    if(vBounds.x() == 0){
-        xRes = 0; // If planar in x direction, set x res to 0
-    }
-    else{
-
-        xRes = (double) (numVertices - 1) / vBounds.x();
-    }
-    if(vBounds.y() == 0){
-        yRes = 0; // If planar in y direction, set x res to 0
-    }
-    else{
-
-        yRes = (double) (numVertices - 1) / vBounds.y();
-    }
-    if(vBounds.z() == 0){
-        zRes = 0; // If planar in z direction, set x res to 0
-    }
-    else{
-        zRes = (double) (numVertices - 1) / vBounds.z();
-    }
-
-    bool first_print = false;
-
-    // Begin the loop to create a hash grid and check for unique vertices
-    for (int xblockNum = 0 ; xblockNum < numBlocks ; xblockNum ++){
-        xblockLowerBound = xblockNum * vtxBlockSize;
-        xblockUpperBound = xblockLowerBound + vtxBlockSize;
-        //        first_print = true;
-        for (int yblockNum = 0 ; yblockNum < numBlocks ; yblockNum ++){
-            yblockLowerBound = yblockNum * vtxBlockSize;
-            yblockUpperBound = yblockLowerBound + vtxBlockSize;
-            first_print = true;
-            for (int zblockNum = 0 ; zblockNum < numBlocks ; zblockNum ++){
-                zblockLowerBound = zblockNum * vtxBlockSize;
-                zblockUpperBound = zblockLowerBound + vtxBlockSize;
-                if (print_debug_info) {
-                    if (first_print){
-                        printf("Block Num [%d, %d, %d] \n", xblockNum, yblockNum, zblockNum);
-                        first_print = false;
-                    }
-                }
-                // Clear the 3D idx and chk arrays to be reused for the new block
-                clearArrays(&vtxChkBlock[vtxChkIdx(0,0,0)], &vtxIdxBlock[vtxChkIdx(0,0,0)], vtxBlockSize);
-                for(int idx = 0; idx < numVertices ; idx++){
-                    if (!vtxAlreadyChkd[idx]){
-                        vPos = vtxArrCopy->getLocalPos(idx);
-                        // Generate keys to parse the 3D idx and chk block
-                        vxKey = xRes * (vPos.x() - vMin.x());
-                        vyKey = yRes * (vPos.y() - vMin.y());
-                        vzKey = zRes * (vPos.z() - vMin.z());
-                        // Check if the generated keys are in the bounds of the current block
-                        if (vxKey >= xblockLowerBound){
-                            if (vyKey >= yblockLowerBound){
-                                if (vzKey >= zblockLowerBound){
-                                    if (vxKey <= xblockUpperBound){
-                                        if (vyKey <= yblockUpperBound){
-                                            if (vzKey <= zblockUpperBound){
-                                                // If the key lies inside the block, offset the value to the block bounds
-                                                vxKey -= xblockLowerBound; vyKey -= yblockLowerBound; vzKey -= zblockLowerBound;
-                                                // Mark that we already checked this vertex, so we don't have to check it again
-                                                vtxAlreadyChkd[idx] = true;
-                                                // Set the vertexIdx Pair value
-                                                orderedVtxList[ordVtxIdx(idx, 0)] = idx;
-                                                // Check if the key is already set in the chk block
-                                                if (vtxChkBlock[vtxChkIdx(vxKey,vyKey,vzKey)] == false){
-                                                    // Unique vertex, so mark it as such in the corresponding blocks
-                                                    vtxChkBlock[vtxChkIdx(vxKey,vyKey,vzKey)] = true;
-                                                    // Set the idx block to the original idx
-                                                    vtxIdxBlock[vtxChkIdx(vxKey,vyKey,vzKey)] = idx;
-                                                    orderedVtxList[ordVtxIdx(idx, 1)] = idx;
-                                                    uniqueVtxCount ++;
-                                                }
-                                                else{
-                                                    // This is not a unique vertex, so get the original idx
-                                                    // and set it in the corresponding blocks
-                                                    orderedVtxList[ordVtxIdx(idx, 1)] = vtxIdxBlock[vtxChkIdx(vxKey,vyKey,vzKey)];
-                                                    duplicateVtxCount++;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    //Resize once to save on iterative push/pop time
-    outputVertices->resize(uniqueVtxCount*3);
-    outputTriangles->resize(numTriangles*3);
-    a_vertexTrees->resize(uniqueVtxCount);
-
-    // In this loop we append the index of the newly resized array containing
-    // the unique vertices to the index of the original array of duplicated vertices.
-    // This is an example of the orderedVtxList might look like for usual run
-    // After above steps
-    // orderedVtxList[:][0] = { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  4,  2,  1,  7,  4,  7, 10,  4}
-    // orderedVtxList[:][1] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-    // And we want:
-    // orderedVtxList[:][0] = { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  4,  2,  1,  7,  4,  7, 10,  4}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  3,  2,  1,  4,  3,  4,  5,  3}
-    int vtxCounted = 0;
-    for (int aIdx = 0 ; aIdx < numVertices ; aIdx++){
-        if (orderedVtxList[ordVtxIdx(aIdx,1)] == orderedVtxList[ordVtxIdx(aIdx,0)] && orderedVtxList[ordVtxIdx(aIdx,2)] == -1){ // A unique vertex
-            vPos = mesh->m_vertices->getLocalPos(aIdx);
-            (*outputVertices)[3*vtxCounted + 0] = vPos.x();
-            (*outputVertices)[3*vtxCounted + 1] = vPos.y();
-            (*outputVertices)[3*vtxCounted + 2] = vPos.z();
-
-            orderedVtxList[ordVtxIdx(aIdx,2)] = vtxCounted; // Record the index in queue where the unique vertex is added
-            (*a_vertexTrees)[vtxCounted].vertexIdx.push_back(aIdx);
-            vtxCounted++; // Increase the queue idx by 1
-        }
-        else if(orderedVtxList[ordVtxIdx(aIdx,1)] < orderedVtxList[ordVtxIdx(aIdx,0)]){ // Not a unique vertex
-            int bIdx = orderedVtxList[ordVtxIdx(aIdx,1)];
-            int cIdx = orderedVtxList[ordVtxIdx(bIdx,2)];
-            if (orderedVtxList[ordVtxIdx(bIdx,1)] != orderedVtxList[ordVtxIdx(bIdx,0)] || cIdx == -1){
-                // This shouldn't happend. This means that we haven't assigned the third row
-                // and row 1 is greater than row 2
-                throw "Algorithm Failed for (b[i] < a[i]), a[b[i]] != b[b[i]] : %d and c[b[i]] != -1";
-            }
-            orderedVtxList[ordVtxIdx(aIdx,2)] = cIdx;
-            (*a_vertexTrees)[cIdx].vertexIdx.push_back(aIdx);
-        }
-        else if(orderedVtxList[ordVtxIdx(aIdx,1)] > orderedVtxList[ordVtxIdx(aIdx,0)]){
-            int bIdx = orderedVtxList[ordVtxIdx(aIdx,1)];
-            if (orderedVtxList[ordVtxIdx(bIdx,1)] != orderedVtxList[ordVtxIdx(bIdx,0)]){
-                throw "Algorithm Failed for (b[i] > a[i]), a[b[i]] != b[b[i]] : %d";
-            }
-            if (orderedVtxList[ordVtxIdx(bIdx,2)] == -1){
-                vPos = mesh->m_vertices->getLocalPos(bIdx);
-                vtxCounted++;
-                (*outputVertices)[3*vtxCounted + 0] = vPos.x();
-                (*outputVertices)[3*vtxCounted + 1] = vPos.y();
-                (*outputVertices)[3*vtxCounted + 2] = vPos.z();
-                orderedVtxList[ordVtxIdx(bIdx,2)] = vtxCounted;
-            }
-            orderedVtxList[ordVtxIdx(aIdx,2)] = orderedVtxList[ordVtxIdx(bIdx,2)];
-        }
-    }
-
-    // This last loop iterates over the triangle idxes and assigns the re-idxd vertices from the
-    // third row of orderedVtxList
-    for (int i = 0 ; i < mesh->m_triangles->m_indices.size() ; i++){
-        int triIdx = mesh->m_triangles->m_indices[i];
-        if ( triIdx >= numVertices){
-            std::cerr << "ERROR ! Triangle Vtx Index " << triIdx << " >= # Vertices " << numVertices << std::endl;
-        }
-        else{
-            (*outputTriangles)[i] = orderedVtxList[ordVtxIdx(triIdx,2)];
-        }
-    }
-
-    // This last loop iterates over the lines and assigns the re-idxd vertices to the
-    // lines
-    if (outputLines){
-        for (int i = 0 ; i < outputLines->size() ; i++){
-            std::vector<int> originalLine = (*outputLines)[i];
-            std::vector<int> reIndexedLine = originalLine;
-            for (int vtx = 0 ; vtx < originalLine.size() ; vtx++){
-                int original_idx = originalLine[vtx];
-                reIndexedLine[vtx] = orderedVtxList[ordVtxIdx(original_idx,2)];
-            }
-            (*outputLines)[i].clear();
-            (*outputLines)[i] = reIndexedLine;
-        }
-    }
-
-    if (print_debug_info){
-        printf("*** PARALLEL COMPUTE UNIQUE VERTICES AND TRIANGLE INDICES ***\n");
-
-        for (int i = 0 ; i < uniqueVtxCount; i ++){
-            printf("Vertex %d = [%f, %f, %f] \n", i, (*outputVertices)[3*i + 0], (*outputVertices)[3*i + 1], (*outputVertices)[3*i + 2]);
-        }
-
-        for (int i = 0 ; i < uniqueVtxCount; i ++){
-            printf("%d) Children = [", i );
-            for (int j = 0 ; j < (*a_vertexTrees)[i].vertexIdx.size(); j++){
-                printf(" %d", (*a_vertexTrees)[i].vertexIdx[j]);
-            }
-            printf(" ]\n");
-        }
-
-        for (int i = 0 ; i < numTriangles; i ++){
-            printf("Triangle %d = [%d, %d, %d] \n", i, (*outputTriangles)[3*i], (*outputTriangles)[3*i+1], (*outputTriangles)[3*i+2]);
-        }
-
-        for (int i = 0 ; i < numVertices ; i++){
-            printf("%d) v[0] = %d \t v[1] = %d \t v[2] = %d \n", i, orderedVtxList[ordVtxIdx(i,0)], orderedVtxList[ordVtxIdx(i,1)], orderedVtxList[ordVtxIdx(i,2)]);
-        }
-    }
-
-    printf("Unique Vertices Found = %d, Duplicate Vertices Found = %d\n", uniqueVtxCount, duplicateVtxCount);
-    delete[] orderedVtxList;
-    delete[] vtxIdxBlock;
-    delete[] vtxChkBlock;
-    delete[] vtxAlreadyChkd;
-}
-
-
-///
-/// \brief afMeshCleanup::computeUniqueVerticesandTrianglesSequential
-/// \param mesh
-/// \param outputVertices
-/// \param outputTriangles
-/// \param a_vertexTrees
-/// \param outputLines
-/// \param print_debug_info
-///
-void afMeshCleanup::computeUniqueVerticesandTrianglesSequential(const cMesh *mesh, std::vector<double> *outputVertices, std::vector<unsigned int> *outputTriangles, std::vector<afVertexTree>* a_vertexTrees , std::vector<std::vector<int> > *outputLines, bool print_debug_info)
-{
-    // read number of triangles of the object
-    int numTriangles = mesh->m_triangles->getNumElements();
-    int numVertices = mesh->m_vertices->getNumElements();
-
-    // Place holder for count of repeat and duplicate vertices
-    int uniqueVtxCount = 0;
-    int duplicateVtxCount = 0;
-
-    if (print_debug_info){
-        printf("# Triangles %d, # Vertices %d \n", numTriangles, numVertices);
-    }
-
-    int* orderedVtxList = new int[numVertices*3];
-
-#define ordVtxIdx(a, b) (numVertices * b + a)
-
-    orderedVtxList[ordVtxIdx(0,0)] = 0;
-    orderedVtxList[ordVtxIdx(0,1)] = 0;
-    orderedVtxList[ordVtxIdx(0,2)] = -1;
-
-    cVector3d v1Pos, v2Pos;
-    for (int i = 0 ; i < numVertices ; i++){
-        orderedVtxList[ordVtxIdx(i,0)] = i;
-        orderedVtxList[ordVtxIdx(i,1)] = -1;
-        orderedVtxList[ordVtxIdx(i,2)] = -1;
-    }
-
-    for (int aIdx = 0 ; aIdx < numVertices - 1 ; aIdx++){
-        if (orderedVtxList[ordVtxIdx(aIdx,1)] == -1){
-            orderedVtxList[ordVtxIdx(aIdx,1)] = aIdx;
-            uniqueVtxCount++;
-        }
-        else{
-            duplicateVtxCount++;
-        }
-        for (int bIdx = aIdx + 1 ; bIdx < numVertices ; bIdx++){
-            v1Pos = mesh->m_vertices->getLocalPos(aIdx);
-            v2Pos = mesh->m_vertices->getLocalPos(bIdx);
-
-            if (orderedVtxList[ordVtxIdx(bIdx,1)] == -1){
-                if ( (v1Pos - v2Pos).length() == 0 ){
-                    orderedVtxList[ordVtxIdx(bIdx,1)] = aIdx;
-                }
-            }
-        }
-    }
-
-    // Check if the last vtx index was assigned
-    if (orderedVtxList[ordVtxIdx(numVertices-1,1)] == -1){
-        orderedVtxList[ordVtxIdx(numVertices-1,1)] = orderedVtxList[ordVtxIdx(numVertices-1,0)];
-        uniqueVtxCount++;
-    }
-
-    outputVertices->resize(uniqueVtxCount*3);
-    outputTriangles->resize(numTriangles*3);
-    a_vertexTrees->resize(uniqueVtxCount);
-
-    // In this loop we append the index of the newly resized array containing
-    // the unique vertices to the index of the original array of duplicated vertices.
-    // This is an example of the orderedVtxList might look like for usual run
-    // After above steps
-    // orderedVtxList[:][0] = { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  4,  2,  1,  7,  4,  7, 10,  4}
-    // orderedVtxList[:][1] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-    // And we want:
-    // orderedVtxList[:][0] = { 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  4,  2,  1,  7,  4,  7, 10,  4}
-    // orderedVtxList[:][1] = { 0,  1,  2,  1,  3,  2,  1,  4,  3,  4,  5,  3}
-    int vtxCounted = 0;
-    cVector3d vPos;
-    for (int aIdx = 0 ; aIdx < numVertices ; aIdx++){
-        if (orderedVtxList[ordVtxIdx(aIdx,1)] == orderedVtxList[ordVtxIdx(aIdx,0)] && orderedVtxList[ordVtxIdx(aIdx,2)] == -1){ // A unique vertex
-            vPos = mesh->m_vertices->getLocalPos(aIdx);
-            (*outputVertices)[3*vtxCounted + 0] = vPos.x();
-            (*outputVertices)[3*vtxCounted + 1] = vPos.y();
-            (*outputVertices)[3*vtxCounted + 2] = vPos.z();
-
-            orderedVtxList[ordVtxIdx(aIdx,2)] = vtxCounted; // Record the index in queue where the unique vertex is added
-            (*a_vertexTrees)[vtxCounted].vertexIdx.push_back(aIdx);
-            vtxCounted++; // Increase the queue idx by 1
-        }
-        else if(orderedVtxList[ordVtxIdx(aIdx,1)] < orderedVtxList[ordVtxIdx(aIdx,0)]){ // Not a unique vertex
-            int bIdx = orderedVtxList[ordVtxIdx(aIdx,1)];
-            int cIdx = orderedVtxList[ordVtxIdx(bIdx,2)];
-            if (orderedVtxList[ordVtxIdx(bIdx,1)] != orderedVtxList[ordVtxIdx(bIdx,0)] || cIdx == -1){
-                // This shouldn't happend. This means that we haven't assigned the third row
-                // and row 1 is greater than row 2
-                throw "Algorithm Failed for (b[i] < a[i]), a[b[i]] != b[b[i]] : and c[b[i]] != -1";
-            }
-            orderedVtxList[ordVtxIdx(aIdx,2)] = cIdx;
-            (*a_vertexTrees)[cIdx].vertexIdx.push_back(aIdx);
-        }
-        else if(orderedVtxList[ordVtxIdx(aIdx,1)] > orderedVtxList[ordVtxIdx(aIdx,0)]){
-            int bIdx = orderedVtxList[ordVtxIdx(aIdx,1)];
-            if (orderedVtxList[ordVtxIdx(bIdx,1)] != orderedVtxList[ordVtxIdx(bIdx,0)]){
-                throw "Algorithm Failed for (b[i] > a[i]), a[b[i]] != b[b[i]] : %d";
-            }
-            if (orderedVtxList[ordVtxIdx(bIdx,2)] == -1){
-                vPos = mesh->m_vertices->getLocalPos(bIdx);
-                vtxCounted++;
-                (*outputVertices)[3*vtxCounted + 0] = vPos.x();
-                (*outputVertices)[3*vtxCounted + 1] = vPos.y();
-                (*outputVertices)[3*vtxCounted + 2] = vPos.z();
-                orderedVtxList[ordVtxIdx(bIdx,2)] = vtxCounted;
-            }
-            orderedVtxList[ordVtxIdx(aIdx,2)] = orderedVtxList[ordVtxIdx(bIdx,2)];
-        }
-    }
-
-    // This last loop iterates over the triangle idxes and assigns the re-idxd vertices from the
-    // third row of orderedVtxList
-    for (int i = 0 ; i < mesh->m_triangles->m_indices.size() ; i++){
-        int triIdx = mesh->m_triangles->m_indices[i];        if ( triIdx >= numVertices){
-            std::cerr << "ERROR ! Triangle Vtx Index " << triIdx << " >= # Vertices " << numVertices << std::endl;
-        }
-        else{
-            (*outputTriangles)[i] = orderedVtxList[ordVtxIdx(triIdx,2)];
-        }
-    }
-
-    // This last loop iterates over the lines and assigns the re-idxd vertices to the
-    // lines
-    if (outputLines){
-        for (int i = 0 ; i < outputLines->size() ; i++){
-            std::vector<int> originalLine = (*outputLines)[i];
-            std::vector<int> reIndexedLine = originalLine;
-            for (int vtx = 0 ; vtx < originalLine.size() ; vtx++){
-                reIndexedLine[vtx] = orderedVtxList[ordVtxIdx(originalLine[vtx],2)];
-            }
-            (*outputLines)[i].clear();
-            (*outputLines)[i] = reIndexedLine;
-        }
-    }
-
-    if(print_debug_info){
-        printf("*** SEQUENTIAL COMPUTE UNIQUE VERTICES AND TRIANGLE INDICES ***\n");
-
-        printf("# Unique Vertices = %d, # Duplicate Vertices = %d\n", uniqueVtxCount, duplicateVtxCount);
-
-        for (int i = 0 ; i < numVertices ; i++){
-            std::cerr << i << ")\t" << orderedVtxList[ordVtxIdx(i,0)] << " ,\t" << orderedVtxList[ordVtxIdx(i,1)] << " ,\t" << orderedVtxList[ordVtxIdx(i,2)] << std::endl;
-        }
-    }
-
-    delete[] orderedVtxList;
-}
-
-
-///
 /// \brief afSoftBody::afSoftBody
 /// \param a_afWorld
 ///
@@ -3480,6 +2983,11 @@ afSoftBody::afSoftBody(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afInertialO
 }
 
 
+///
+/// \brief afSoftBody::createFromAttribs
+/// \param a_attribs
+/// \return
+///
 bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
 {
     storeAttributes(a_attribs);
@@ -3503,7 +3011,6 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
 
     if (afVisualUtils::createFromAttribs(&a_attribs->m_visualAttribs, m_visualMesh, m_name)){
         m_visualMesh->scale(m_scale);
-        m_meshReductionSuccessful = false;
     }
     else
     {
@@ -3515,10 +3022,10 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     }
 
     if (m_collisionMesh->loadFromFile(a_attribs->m_collisionAttribs.m_meshFilepath.c_str())){
+        m_collisionMesh->removeDuplicateVertices();
         m_collisionMesh->scale(m_scale);
         // Use the visual mesh for generating the softbody
         generateFromMesh(m_collisionMesh, a_attribs->m_collisionAttribs.m_margin);
-        cleanupMesh(m_visualMesh, m_afVertexTree, m_trianglesPtr);
     }
     else
     {
@@ -3595,35 +3102,27 @@ bool afSoftBody::createFromAttribs(afSoftBodyAttributes *a_attribs)
     bool useOriginalIndexes = getVisualObject()->m_vtxIdxMap.size() > 0 ? true : false;
 
     for (uint i = 0 ; i < a_attribs->m_fixedNodes.size() ; i++){
+
         uint nodeIdx = a_attribs->m_fixedNodes[i];
-        if ( nodeIdx < softBody->m_nodes.size()){
-            if (useOriginalIndexes){
-                // Find the node's original vertex index
-                map<int, vector<int> >::iterator nIt = getVisualObject()->m_vtxIdxMap.find(nodeIdx);
-                if ( nIt != getVisualObject()->m_vtxIdxMap.end()){
-                    if (nIt->second.size() > 0){
-                        int remappedIdx = nIt->second[0];
-                        int j = 0;
-                        bool found = false;
-                        while (j < m_afVertexTree.size() && !found){
-                            for (int k = 0 ; k < m_afVertexTree[j].vertexIdx.size() ; k++){
-                                if (remappedIdx == m_afVertexTree[j].vertexIdx[k]){
-//                                    cerr << "Node Idx: " << nodeIdx
-//                                         << " |  Original Vtx Idx: " << nIt->first
-//                                         << " | Remapped Vtx Idx:  " << remappedIdx << endl;
-                                    softBody->setMass(j, 0);
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            j++;
-                        }
-                    }
+        if ( nodeIdx > softBody->m_nodes.size()){break;}
+
+        if (useOriginalIndexes){
+            // Find the node's original vertex index
+            map<int, vector<int> >::iterator nIt = getVisualObject()->m_vtxIdxMap.find(nodeIdx);
+            if ( nIt != getVisualObject()->m_vtxIdxMap.end()){
+                if (nIt->second.size() == 0){break;}
+                int originalVtxIdx = nIt->second[0];
+                unsigned int newIdx = m_collisionMesh->getMesh(0)->getNewVertexIndex(originalVtxIdx);
+                if (newIdx > 0){
+                    cerr << "INFO! Fixing Softbody Node. Original Node Idx: " << nodeIdx
+                         << " | Old Vertex/Node Idx:  " << originalVtxIdx
+                         << " | New Vertex/Node Idx: " << newIdx << endl;
+                    softBody->setMass(newIdx, 0);
                 }
             }
-            else{
-                softBody->setMass(nodeIdx, 0);
-            }
+        }
+        else{
+            softBody->setMass(nodeIdx, 0);
         }
     }
 
@@ -3673,23 +3172,12 @@ void afSoftBody::toggleSkeletalModelVisibility(){
 void afSoftBody::updateSceneObjects(){
     cMesh * mesh = m_visualMesh->getMesh(0);
 
-    if (m_meshReductionSuccessful){
-        for (int i = 0 ; i < m_bulletSoftBody->m_nodes.size() ; i++){
-            btVector3 nodePos = m_bulletSoftBody->m_nodes[i].m_x;
-            mesh->m_vertices->setLocalPos(i, nodePos[0], nodePos[1], nodePos[2]);
-        }
-    }
-    else{
-        for (int i = 0 ; i < m_afVertexTree.size() ; i++){
-            btVector3 nodePos = m_bulletSoftBody->m_nodes[i].m_x;
-            for (int j = 0 ; j < m_afVertexTree[i].vertexIdx.size() ; j++){
-                int idx = m_afVertexTree[i].vertexIdx[j];
-                mesh->m_vertices->setLocalPos(idx, nodePos[0], nodePos[1], nodePos[2]);
-            }
-        }
+    for (int i = 0 ; i < m_bulletSoftBody->m_nodes.size() ; i++){
+        mesh->setVertexLocalPosForAllDuplicates(i, m_bulletSoftBody->m_nodes[i].m_x[0], m_bulletSoftBody->m_nodes[i].m_x[1], m_bulletSoftBody->m_nodes[i].m_x[2]);
     }
 
     mesh->computeAllNormals();
+    mesh->markForUpdate(true);
     afBaseObject::updateSceneObjects();
 }
 
@@ -3744,66 +3232,42 @@ bool afSoftBody::cleanupMesh(cMultiMesh *multiMesh, std::vector<afVertexTree> &a
         reducedMesh->setShowEdges(false);
         multiMesh->m_meshes->clear();
         multiMesh->addMesh(reducedMesh);
-        m_meshReductionSuccessful = true;
     }
 
     return valid;
 }
 
+
+///
+/// \brief afSoftBody::generateFromMesh
+/// \param multiMesh
+/// \param a_margin
+/// \return
+///
 bool afSoftBody::generateFromMesh(cMultiMesh *multiMesh, const double a_margin)
 {
     // create compound shape
     m_bulletCollisionShape = new btCompoundShape();;
 
-    std::vector<cMesh*> *v_meshes;
-    v_meshes = multiMesh->m_meshes;
-
     // create collision detector for each mesh
-    std::vector<cMesh*>::iterator it;
-    for (it = v_meshes->begin(); it < v_meshes->end(); it++)
+    for (int mi=0; mi < multiMesh->getNumMeshes() ; mi++)
     {
-        cMesh* mesh = (*it);
-        // read number of triangles of the object
-        int numTriangles = mesh->m_triangles->getNumElements();
-        std::vector<std::vector <int> > polyLines = mesh->m_lines;
-        //        computeUniqueVerticesandTriangles(mesh, &m_verticesPtr, &m_trianglesPtr, &m_afVertexTree, &polyLines, false);
-        afMeshCleanup::computeUniqueVerticesandTrianglesSequential(mesh, &m_verticesPtr, &m_trianglesPtr, &m_afVertexTree, &polyLines, false);
-        if (m_trianglesPtr.size() > 0){
-            m_bulletSoftBody = createFromMesh(*m_afWorld->m_bulletSoftBodyWorldInfo,
-                                              m_verticesPtr.data(), m_verticesPtr.size() / 3, m_trianglesPtr.data(), numTriangles);
-            createLinksFromLines(m_bulletSoftBody, &polyLines, mesh);
-        }
-        else{
-            m_bulletSoftBody = new btSoftBody(m_afWorld->m_bulletSoftBodyWorldInfo);
-            /* Default material	*/
-            btSoftBody::Material* pm = m_bulletSoftBody->appendMaterial();
-            pm->m_kLST = 1;
-            pm->m_kAST = 1;
-            pm->m_kVST = 1;
-            pm->m_flags = btSoftBody::fMaterial::Default;
-            if (m_bulletSoftBody){
-                m_bulletSoftBody->m_nodes.resize(mesh->m_vertices->getNumElements());
-                for(int nIdx = 0 ; nIdx < m_bulletSoftBody->m_nodes.size() ; nIdx++){
-                    btVector3 vPos = to_btVector(mesh->m_vertices->getLocalPos(nIdx));
-                    btSoftBody::Node& n = m_bulletSoftBody->m_nodes[nIdx];
-                    n.m_im = 1;
-                    n.m_im = 1 / n.m_im;
-                    n.m_x = vPos;
-                    n.m_q = n.m_x;
-                    n.m_n = btVector3(0, 0, 1);
-                    n.m_leaf = m_bulletSoftBody->m_ndbvt.insert(btDbvtVolume::FromCR(n.m_x, 0.1), &n);
-                    n.m_material = m_bulletSoftBody->m_materials[0];
-                }
-            }
-            createLinksFromLines(m_bulletSoftBody, &mesh->m_lines, mesh);
-        }
+        cMesh* mesh = multiMesh->getMesh(mi);
+        m_bulletSoftBody = createFromMesh(m_afWorld->m_bulletSoftBodyWorldInfo, mesh, false);
+        createLinksFromLines(m_bulletSoftBody, &mesh->m_lines, mesh);
         m_bulletSoftBody->getCollisionShape()->setMargin(a_margin);
     }
-
     return true;
 }
 
 
+///
+/// \brief afSoftBody::createLinksFromLines
+/// \param a_softBody
+/// \param a_lines
+/// \param a_mesh
+/// \return
+///
 bool afSoftBody::createLinksFromLines(btSoftBody *a_softBody, std::vector< std::vector<int> > *a_lines, cMesh* a_mesh){
     if (a_softBody && a_lines){
         for(int lIdx = 0 ; lIdx < a_lines->size() ; lIdx++){
@@ -3852,30 +3316,35 @@ bool afSoftBody::createLinksFromLines(btSoftBody *a_softBody, std::vector< std::
 }
 
 
-btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo& worldInfo, const btScalar* vertices, int nNodes,
-                                       const unsigned int* triangles, int ntriangles, bool randomizeConstraints)
-{
+///
+/// \brief afSoftBody::createFromMesh
+/// \param worldInfo
+/// \param a_mesh
+/// \param randomizeConstraints
+/// \return
+///
+btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo* worldInfo, cMesh *a_mesh, bool randomizeConstraints){
     unsigned int maxidx = 0;
     int i, j, ni;
 
-    for (i = 0, ni = ntriangles * 3; i < ni; ++i)
+    for (i = 0, ni = a_mesh->getNumTriangles() * 3; i < ni; ++i)
     {
-        maxidx = btMax(triangles[i], maxidx);
+        maxidx = btMax(a_mesh->m_triangles->m_indices[i], maxidx);
     }
     ++maxidx;
     btAlignedObjectArray<bool> chks;
     btAlignedObjectArray<btVector3> vtx;
     chks.resize(maxidx * maxidx, false);
-    vtx.resize(nNodes);
-    for (i = 0, j = 0; i < nNodes * 3; ++j, i += 3)
+    vtx.resize(a_mesh->getNumVertices());
+    for (i = 0; i < a_mesh->getNumVertices(); i++)
     {
-        vtx[j] = btVector3(vertices[i], vertices[i + 1], vertices[i + 2]);
+        vtx[i] = to_btVector(a_mesh->m_vertices->getLocalPos(i));
     }
-    btSoftBody* psb = new btSoftBody(&worldInfo, vtx.size(), &vtx[0], 0);
-    for (i = 0, ni = ntriangles * 3; i < ni; i += 3)
+    btSoftBody* psb = new btSoftBody(worldInfo, vtx.size(), &vtx[0], 0);
+    for (i = 0, ni = a_mesh->getNumTriangles() * 3; i < ni; i += 3)
     {
-        const unsigned int idx[] = {triangles[i], triangles[i + 1], triangles[i + 2]};
-#define IDX(_x_, _y_) ((_y_)*maxidx + (_x_))
+        const unsigned int idx[] = {a_mesh->m_triangles->m_indices[i], a_mesh->m_triangles->m_indices[i + 1], a_mesh->m_triangles->m_indices[i + 2]};
+    #define IDX(_x_, _y_) ((_y_)*maxidx + (_x_))
         for (int j = 2, k = 0; k < 3; j = k++)
         {
             if (!chks[IDX(idx[j], idx[k])])
@@ -3885,7 +3354,7 @@ btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo& worldInfo, const btS
                 psb->appendLink(idx[j], idx[k]);
             }
         }
-#undef IDX
+    #undef IDX
         psb->appendFace(idx[0], idx[1], idx[2]);
     }
 
@@ -3895,6 +3364,7 @@ btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo& worldInfo, const btS
     }
 
     return (psb);
+
 }
 
 
@@ -3997,63 +3467,21 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
     // First we should search in the local Model space and if we don't find the body.
     // Only then we find the world space
 
-    string body1Name = getNamespace() + m_parentName;
-    string body2Name = getNamespace() + m_childName;
-
-    m_afParentBody = m_modelPtr->getRigidBody(body1Name, true);
-    m_afChildBody = m_modelPtr->getRigidBody(body2Name, true);
 
     string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getJointMap());
     setGlobalRemapIdx(remap_idx);
 
-    // If either body not found
-    if (m_afParentBody == nullptr || m_afChildBody == nullptr){
+    m_afParentBody = findConnectingBody(m_parentName);
+    m_afChildBody = findConnectingBody(m_childName);
 
-        if (m_afParentBody == nullptr){
-            m_afParentBody = m_afWorld->getRigidBody(body1Name + getGlobalRemapIdx(), true);
-        }
-        if (m_afChildBody == nullptr){
-            m_afChildBody = m_afWorld->getRigidBody(body2Name + getGlobalRemapIdx(), true);
-        }
+    if (m_afParentBody == nullptr){
+        cerr <<"ERROR! JOINT: \"" << m_name << "\'s\" PARENT BODY \"" << m_parentName <<"\" NOT FOUND" << endl;
+        return 0;
     }
 
-    // If we couldn't find the body with name_remapping, it might have been
-    // Defined in another ambf file. Search without name_remapping string
-    if(m_afParentBody == nullptr){
-        m_afParentBody = m_afWorld->getRigidBody(m_parentName, true);
-        // If a body is still not found, print error and ignore joint
-        if (m_afParentBody == nullptr){
-            cerr <<"ERROR! JOINT: \"" << m_name <<
-                   "\'s\" PARENT BODY \"" << m_parentName <<
-                   "\" NOT FOUND" << endl;
-            return 0;
-        }
-        // If the body is not world, print what we just did
-        if (!(strcmp(m_afParentBody->m_name.c_str(), "world") == 0)
-                && !(strcmp(m_afParentBody->m_name.c_str(), "World") == 0)
-                && !(strcmp(m_afParentBody->m_name.c_str(), "WORLD") == 0)){
-            //            cerr <<"INFO! JOINT: \"" << m_name <<
-            //                   "\'s\" PARENT BODY \"" << m_parentName <<
-            //                   "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
-        }
-    }
-    if(m_afChildBody == nullptr){
-        m_afChildBody = m_afWorld->getRigidBody(m_childName, true);
-        // If any body is still not found, print error and ignore joint
-        if (m_afChildBody == nullptr){
-            cerr <<"ERROR! JOINT: \"" << m_name <<
-                   "\'s\" CHILD BODY \"" << m_childName <<
-                   "\" NOT FOUND" << endl;
-            return 0;
-        }
-        // If the body is not world, print what we just did
-        if ( !(strcmp(m_afChildBody->m_name.c_str(), "world") == 0)
-             && !(strcmp(m_afChildBody->m_name.c_str(), "World") == 0)
-             && !(strcmp(m_afChildBody->m_name.c_str(), "WORLD") == 0)){
-            cerr <<"INFO! JOINT: \"" << m_name <<
-                   "\'s\" CHILD BODY \"" << m_childName <<
-                   "\" FOUND IN ANOTHER AMBF CONFIG," << endl;
-        }
+    if (m_afChildBody == nullptr){
+        cerr <<"ERROR! JOINT: \"" << m_name << "\'s\" CHILD BODY \"" << m_childName << "\" NOT FOUND" << endl;
+        return 0;
     }
 
     m_controller.createFromAttribs(&a_attribs->m_controllerAttribs);
@@ -4214,6 +3642,9 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
             // The rotational limits are inverted in Bullet
             m_sixDof->setLimit(id, -a_attribs->m_sixDofLimits.m_upperLimit[id], -a_attribs->m_sixDofLimits.m_lowerLimit[id]);
         }
+        for (int id = 0 ; id < 6 ; id++){
+            if (a_attribs->m_override_cfm) m_sixDof->setParam(BT_CONSTRAINT_CFM, a_attribs->m_cfm, id);
+        }
 
         m_btConstraint = m_sixDof;
 
@@ -4234,6 +3665,8 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
             m_sixDofSpring->setDamping(id, a_attribs->m_sixDofSpringAttribs.m_damping[id]);
             m_sixDofSpring->setStiffness(id, a_attribs->m_sixDofSpringAttribs.m_stiffness[id]);
             m_sixDofSpring->enableSpring(id, true);
+            if (a_attribs->m_override_erp) m_sixDofSpring->setParam(BT_CONSTRAINT_ERP, a_attribs->m_erp, id);
+            if (a_attribs->m_override_cfm) m_sixDofSpring->setParam(BT_CONSTRAINT_CFM, a_attribs->m_cfm, id);
         }
 
         m_btConstraint = m_sixDofSpring;
@@ -4256,7 +3689,7 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
 
     loadPlugins(this, a_attribs, &a_attribs->m_pluginAttribs);
 
-    loadCommunicationPlugin(this, a_attribs);
+//    loadCommunicationPlugin(this, a_attribs);
 
     return true;
 }
@@ -4264,6 +3697,33 @@ bool afJoint::createFromAttribs(afJointAttributes *a_attribs)
 void afJoint::update(double dt){
     cacheState(dt);
 }
+
+
+afRigidBodyPtr afJoint::findConnectingBody(string body_name){
+    afRigidBodyPtr connectingBody = nullptr;
+
+    connectingBody = m_modelPtr->getRigidBody(body_name, true);
+    if (connectingBody == nullptr){
+        connectingBody = m_modelPtr->getRigidBody(getNamespace() + body_name, true);
+        if (connectingBody == nullptr){
+            connectingBody = m_afWorld->getRigidBody(getNamespace() + body_name + getGlobalRemapIdx(), true);
+            // If we couldn't find the body with name_remapping, it might have been
+            // Defined in another ambf file. Search without name_remapping string
+            if(connectingBody == nullptr){
+                connectingBody = m_afWorld->getRigidBody(body_name, true);
+                // If the body is not world, print what we just did
+                if (connectingBody != nullptr && !(strcmp(connectingBody->m_name.c_str(), "world") == 0)
+                        && !(strcmp(connectingBody->m_name.c_str(), "World") == 0)
+                        && !(strcmp(connectingBody->m_name.c_str(), "WORLD") == 0)){
+                                cerr <<"INFO! JOINT: \"" << m_name << "\'s\" PARENT/CHILD BODY \"" << body_name << "\" FOUND IN ANOTHER ADF," << endl;
+                }
+            }
+        }
+    }
+
+    return connectingBody;
+}
+
 
 btVector3 afJoint::getDefaultJointAxisInParent(afJointType a_type)
 {
@@ -5163,7 +4623,7 @@ afBaseObjectPtr afObjectManager::getBaseObject(string a_name, afBaseObjectMap* o
         // If only one object is found, return that object
         return objHandle;
     }
-    else if(matching_obj_count > 1){
+    else if(matching_obj_count > 1 && !suppress_warning){
         cerr << "WARNING! MULTIPLE OBJECTS WITH SUB-STRING: \"" << a_name << "\" FOUND. PLEASE SPECIFY FURTHER\n";
         for (int i = 0 ; i < matching_obj_names.size() ; i++){
             cerr << "\t" << i << ") " << matching_obj_names[i] << endl;
@@ -5899,14 +5359,14 @@ afWorld::afWorld(): afIdentification(afType::WORLD), afModelManager(this){
     m_enclosureW = 4.0;
     m_enclosureH = 3.0;
 
-    m_pickSphere = new cMesh();
-    cCreateSphere(m_pickSphere, 0.02);
-    m_pickSphere->m_material->setPinkHot();
-    m_pickSphere->setUseDisplayList(true);
-    m_pickSphere->markForUpdate(false);
-    m_pickSphere->setLocalPos(0,0,0);
-    m_pickSphere->setShowEnabled(false);
-    addSceneObjectToWorld(m_pickSphere);
+    m_pickMultiPoint = new cMultiPoint();
+    m_pickMultiPoint->newPoint(cVector3d(0,0,0));
+    m_pickMultiPoint->setPointSize(15);
+    cColorf pickColor; pickColor.setGreenYellow();
+    m_pickMultiPoint->setPointColor(pickColor);
+    m_pickMultiPoint->setShowEnabled(false);
+    addSceneObjectToWorld(m_pickMultiPoint);
+
     m_pickColor.setOrangeTomato();
     m_pickColor.setTransparencyLevel(0.3);
     m_namespace = "";
@@ -6069,7 +5529,7 @@ void afWorld::reset(){
 ///
 void afWorld::setGravity(afVector3d &vec)
 {
-    m_bulletWorld->setGravity(btVector3(vec(0), vec(1), vec(2)));
+    m_bulletWorld->setGravity(to_btVector(vec));
     m_bulletSoftBodyWorldInfo->m_gravity << vec;
 }
 
@@ -6092,7 +5552,7 @@ double afWorld::getSimulationDeltaTime()
 /// \param a_loopFreq
 /// \param a_numDevices
 ///
-void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loopFreq, int a_numDevices)
+void afWorld::updateDynamics(double a_interval, int a_numDevices)
 {
     // sanity check
     if (a_interval <= 0) { return; }
@@ -6116,10 +5576,8 @@ void afWorld::updateDynamics(double a_interval, double a_wallClock, double a_loo
         }
     }
 
-    m_physicsFreq = a_loopFreq;
+    m_freqCounterPhysics.signal(1);
     m_numDevices = a_numDevices;
-
-    m_wallClock = a_wallClock;
 
     double dt = getSimulationDeltaTime();
 
@@ -6290,7 +5748,7 @@ void afWorld::removeSceneObjectFromWorld(cGenericObject *a_cObject)
 /// \return
 ///
 double afWorld::computeStepSize(bool adjust_intetration_steps){
-    double step_size = g_wallClock.getCurrentTimeSeconds() - getSimulationTime();
+    double step_size = m_wallClock.getCurrentTimeSeconds() - getSimulationTime();
     if (adjust_intetration_steps){
         int min_iterations = 2;
         if (step_size >= getIntegrationTimeStep() * min_iterations){
@@ -6725,8 +6183,8 @@ bool afWorld::pickBody(const cVector3d &rayFromWorld, const cVector3d &rayToWorl
     {
         cVector3d pickPos;
         pickPos << rayCallback.m_hitPointWorld;
-        m_pickSphere->setLocalPos(pickPos);
-        m_pickSphere->setShowEnabled(true);
+        m_pickMultiPoint->setLocalPos(pickPos);
+        m_pickMultiPoint->setShowEnabled(true);
         const btCollisionObject* colObject = rayCallback.m_collisionObject;
         if (colObject->getInternalType() == btCollisionObject::CollisionObjectTypes::CO_RIGID_BODY){
             btRigidBody* body = (btRigidBody*)btRigidBody::upcast(colObject);
@@ -6819,7 +6277,7 @@ bool afWorld::movePickedBody(const cVector3d &rayFromWorld, const cVector3d &ray
 
         newLocation = rayFromWorld + dir;
         // Set the position of grab sphere
-        m_pickSphere->setLocalPos(newLocation);
+        m_pickMultiPoint->setLocalPos(newLocation);
 
         if (m_pickedConstraint){
             btPoint2PointConstraint* pickCon = static_cast<btPoint2PointConstraint*>(m_pickedConstraint);
@@ -6857,7 +6315,7 @@ bool afWorld::movePickedBody(const cVector3d &rayFromWorld, const cVector3d &ray
         dir *= m_oldPickingDist;
 
         newPivotB = rayFromWorld + dir;
-        m_pickSphere->setLocalPos(newPivotB);
+        m_pickMultiPoint->setLocalPos(newPivotB);
         m_pickedNodeGoal = newPivotB;
         return true;
     }
@@ -6882,7 +6340,7 @@ void afWorld::removePickingConstraint(){
     }
 
     if (m_pickedBulletRigidBody){
-        m_pickSphere->setShowEnabled(false);
+        m_pickMultiPoint->setShowEnabled(false);
         m_pickedBulletRigidBody = nullptr;
     }
 
@@ -6891,7 +6349,7 @@ void afWorld::removePickingConstraint(){
     }
 
     if (m_pickedSoftBody){
-        m_pickSphere->setShowEnabled(false);
+        m_pickMultiPoint->setShowEnabled(false);
         m_pickedSoftBody = nullptr;
         m_pickedNodeIdx = -1;
         m_pickedNodeMass = 0;
@@ -7154,6 +6612,8 @@ bool afCamera::createFromAttribs(afCameraAttributes *a_attribs)
     m_monitorNumber = a_attribs->m_monitorNumber;
 
     setVisibleFlag(a_attribs->m_visible);
+
+    m_mouseControlScales = a_attribs->m_mouseControlScales;
 
     //    a_attribs->m_visible;
     createWindow();
@@ -7471,11 +6931,11 @@ void afCamera::updateLabels(afRenderOptions &options)
     // We should prioritize the update of freqeunt labels
 
     // update haptic and graphic rate data
-    string wallTimeStr = "Wall Time: " + cStr(m_afWorld->g_wallClock.getCurrentTimeSeconds(), 2) + " s";
+    string wallTimeStr = "Wall Time: " + cStr(m_afWorld->m_wallClock.getCurrentTimeSeconds(), 2) + " s";
     string simTimeStr = "Sim Time: " + cStr(m_afWorld->getSimulationTime(), 2) + " s";
 
     string graphicsFreqStr = "Gfx (" + cStr(m_afWorld->m_freqCounterGraphics.getFrequency(), 0) + " Hz)";
-    string hapticFreqStr = "Phx (" + cStr(m_afWorld->m_freqCounterHaptics.getFrequency(), 0) + " Hz)";
+    string hapticFreqStr = "Phx (" + cStr(m_afWorld->m_freqCounterPhysics.getFrequency(), 0) + " Hz)";
 
     string timeLabelStr = wallTimeStr + " / " + simTimeStr;
     string dynHapticFreqLabelStr = graphicsFreqStr + " / " + hapticFreqStr;
@@ -7772,7 +7232,11 @@ void afCamera::enableDepthPublishing(afImageResolutionAttribs* imageAttribs, afN
 
     // Set up the frame buffer
     m_depthBuffer = new cFrameBuffer();
-
+    
+#ifndef GL_RGBA32F
+#define GL_RGBA32F GL_RGBA32F_ARB
+#endif
+    
     m_depthBuffer->setup(m_camera, imageAttribs->m_width, imageAttribs->m_height, true, false, GL_RGBA32F);
 
     m_depthPC.setup(imageAttribs->m_width, imageAttribs->m_height, 3);
@@ -7921,6 +7385,12 @@ bool afLight::createFromAttribs(afLightAttributes *a_attribs)
     m_spotLight->setSpotExponent(a_attribs->m_spotExponent);
     m_spotLight->setCutOffAngleDeg(a_attribs->m_cuttoffAngle * (180/3.14));
     m_spotLight->setShadowMapEnabled(true);
+
+    if (a_attribs->m_attenuationDefined){
+        setConstantAttenuation(a_attribs->m_constantAttenuation);
+        setLinearAttenuation(a_attribs->m_linearAttenuation);
+        setQuadraticAttenuation(a_attribs->m_quadraticAttenuation);
+    }
 
     switch (a_attribs->m_shadowQuality) {
     case afShadowQualityType::NO_SHADOW:
@@ -8123,6 +7593,14 @@ bool afModel::createFromAttribs(afModelAttributes *a_attribs)
             type_str = "RESISTANCE";
             afResistanceSensorAttributes* senAttribs = (afResistanceSensorAttributes*) a_attribs->m_sensorAttribs[i];
             valid = ((afResistanceSensor*)sensorPtr)->createFromAttribs(senAttribs);
+            break;
+        }
+        case afSensorType::CONTACT:
+        {
+            sensorPtr = new afContactSensor(m_afWorld, this);
+            type_str = "CONTACT";
+            afContactSensorAttributes* senAttribs = (afContactSensorAttributes*) a_attribs->m_sensorAttribs[i];
+            valid = ((afContactSensor*)sensorPtr)->createFromAttribs(senAttribs);
             break;
         }
         default:
@@ -8733,8 +8211,19 @@ void afGhostObject::update(double dt)
     //    cTransform trans;
     //    trans << m_bulletGhostObject->getWorldTransform();
     //    setLocalTransform(trans);
-    m_bulletGhostObject->setWorldTransform(to_btTransform(m_globalTransform));
-    vector<btRigidBody*> localSensedBodies;
+    cTransform T_g_p = getLocalTransform();
+    if (m_parentObject){
+        cTransform T_p_w;
+        if (m_parentObject->getType() == afType::RIGID_BODY || m_parentObject->getType() == afType::SOFT_BODY || m_parentObject->getType() == afType::GHOST_OBJECT){
+            T_p_w << ((afInertialObject*)m_parentObject)->getCOMTransform();
+        }
+        else{
+            T_p_w = m_parentObject->getGlobalTransform();
+        }
+        T_g_p = T_p_w * T_g_p;
+    }
+    m_bulletGhostObject->setWorldTransform(to_btTransform(T_g_p));
+    m_sensedObjectsMaps.clear();
 
     btManifoldArray* manifoldArray = new btManifoldArray();
     btBroadphasePairArray pairArray = m_bulletGhostObject->getOverlappingPairCache()->getOverlappingPairArray();
@@ -8754,25 +8243,23 @@ void afGhostObject::update(double dt)
             collisionPair->m_algorithm->getAllContactManifolds(*manifoldArray);
         }
 
-        for (int j = 0; j < manifoldArray->size(); j++)
-        {
+        for (int j = 0; j < manifoldArray->size(); j++){
             btPersistentManifold* manifold = manifoldArray->at(j);
-            btCollisionObject* co;
+            btCollisionObject* coB;
             if (manifold->getBody0() == m_bulletGhostObject){
-                co = const_cast<btCollisionObject*>(manifold->getBody1());
+                coB = const_cast<btCollisionObject*>(manifold->getBody1());
             }
             else{
-                co = const_cast<btCollisionObject*>(manifold->getBody0());
+                coB = const_cast<btCollisionObject*>(manifold->getBody0());
             }
+            afBaseObjectPtr aoB = (afBaseObjectPtr)coB->getUserPointer();
 
-            for (int p = 0; p < manifold->getNumContacts(); p++)
-            {
-                btManifoldPoint pt = manifold->getContactPoint(p);
-                if (pt.getDistance() < 0.0f)
-                {
-                    btRigidBody* pBody = dynamic_cast<btRigidBody*>(co);
-                    if (pBody){
-                        localSensedBodies.push_back(pBody);
+            if(aoB){
+                for (int p = 0; p < manifold->getNumContacts(); p++){
+                    btManifoldPoint pt = manifold->getContactPoint(p);
+                    if (pt.getDistance() < 0.0f) {
+                        m_sensedObjectsMaps[aoB] = pt.getDistance(); // All we care is if any point of object intersects.
+                        break;
                     }
                 }
             }
@@ -8780,42 +8267,6 @@ void afGhostObject::update(double dt)
     }
 
     delete manifoldArray;
-
-    for (int i = 0 ; i < m_sensedBodies.size() ; i++){
-        m_sensedBodies[i]->setGravity(m_afWorld->m_bulletWorld->getGravity());
-        m_sensedBodies[i]->applyCentralForce(btVector3(0, 0, 0));
-        m_sensedBodies[i]->applyTorque(btVector3(0, 0, 0));
-    }
-
-    m_sensedBodies.clear();
-    m_sensedBodies = localSensedBodies;
-
-
-    for (int i = 0 ; i < m_sensedBodies.size() ; i++){
-        if (m_sensedBodies[i]){
-            m_sensedBodies[i]->setGravity(btVector3(0, 0, 0));
-            double damping_factor = 1.0 - 0.1;
-            btVector3 va(0, 0, 0);
-            if (getParentObject()){
-                afRigidBodyPtr parentBody = dynamic_cast<afRigidBodyPtr>(getParentObject());
-                va = parentBody->m_bulletRigidBody->getLinearVelocity();
-            }
-
-            btVector3 vb = m_sensedBodies[i]->getLinearVelocity();
-            double mag_va = va.length();
-            btVector3 proj_vb_va(0, 0, 0);
-
-            if (mag_va > 0.00001){
-                proj_vb_va = va.normalized() * (vb.dot(va) / mag_va);
-            }
-            btVector3 orth_vb_va = vb - proj_vb_va;
-
-            btVector3 wb =  m_sensedBodies[i]->getAngularVelocity();
-
-            m_sensedBodies[i]->setLinearVelocity(damping_factor * orth_vb_va + va);
-            m_sensedBodies[i]->setAngularVelocity(damping_factor * wb);
-        }
-    }
 }
 
 bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
@@ -8851,6 +8302,7 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
     if (a_attribs->m_collisionAttribs.m_geometryType == afGeometryType::MESH){
         if (m_collisionMesh->loadFromFile(a_attribs->m_collisionAttribs.m_meshFilepath.c_str()) ){
             m_collisionMesh->scale(m_scale);
+            m_collisionMesh->removeDuplicateVertices();
             m_bulletCollisionShape = afShapeUtils::createCollisionShape(m_collisionMesh,
                                                                         a_attribs->m_collisionAttribs.m_margin,
                                                                         afTransform(),
@@ -8924,6 +8376,8 @@ bool afGhostObject::createFromAttribs(afGhostObjectAttributes *a_attribs)
     }
 
     loadPlugins(this, a_attribs, &a_attribs->m_pluginAttribs);
+
+    loadCommunicationPlugin(this, a_attribs);
 
     return valid;
 }
@@ -9017,7 +8471,7 @@ bool afVolume::createFromAttribs(afVolumeAttributes *a_attribs)
             m_voxelObject = new cVoxelObject();
             // Setting transparency before setting the texture ensures that the rendering does not show empty spaces as black
             // and the depth point cloud is able to see the volume
-            m_voxelObject->setTransparencyLevel(1.0);
+//            m_voxelObject->setTransparencyLevel(1.0);
 
             cTexture3dPtr texture = cTexture3d::create();
             texture->setImage(m_multiImage);
@@ -9347,4 +8801,161 @@ cTexture3dPtr afVolume::copy3DTexture(cTexture1dPtr tex3D)
     copyTex = static_pointer_cast<cTexture3d>(tex3D)->copy();
     copyTex->m_image = static_pointer_cast<cMultiImage>(tex3D->m_image)->copy();
     return copyTex;
+}
+
+afContactSensorCallback::~afContactSensorCallback(){
+}
+
+bool afContactSensorCallback::needsCollision(btBroadphaseProxy *proxy) const {
+    // superclass will check m_collisionFilterGroup and m_collisionFilterMask
+    if(!btCollisionWorld::ContactResultCallback::needsCollision(proxy))
+        return false;
+    // if passed filters, may also want to avoid contacts between constraints
+    assert(m_parentObject->getType() == afType::RIGID_BODY && "ERROR! NOT IMPLEMENTED FOR OTHER AMBF OBJECT TYPES"); // TODO: GENERALIZE TO OTHER AF OBJECTS
+    btRigidBody* rb = ((afRigidBodyPtr)m_parentObject)->m_bulletRigidBody;
+    return rb->checkCollideWithOverride(static_cast<btCollisionObject*>(proxy->m_clientObject));
+}
+
+btScalar afContactSensorCallback::addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0, int partId0, int index0, const btCollisionObjectWrapper *colObj1, int partId1, int index1)
+{
+    if (cp.getDistance() <= m_distanceThreshold){
+        afBaseObjectPtr boA, boB;
+        cVector3d P_a_w, P_b_w, N_b_w;
+        if(colObj0->m_collisionObject->getUserPointer() == m_parentObject) {
+            boA = (afBaseObjectPtr)colObj0->m_collisionObject->getUserPointer();
+            boB = (afBaseObjectPtr)colObj1->m_collisionObject->getUserPointer();
+            P_a_w << cp.m_positionWorldOnA;
+            P_b_w << cp.m_positionWorldOnB;
+            N_b_w << cp.m_normalWorldOnB;
+        } else {
+            assert(colObj1->m_collisionObject->getUserPointer() == m_parentObject && "body does not match either collision object");
+            boA = (afBaseObjectPtr)colObj0->m_collisionObject->getUserPointer();
+            boB = (afBaseObjectPtr)colObj0->m_collisionObject->getUserPointer();
+            P_a_w << cp.m_positionWorldOnB;
+            P_b_w << cp.m_positionWorldOnA;
+            N_b_w << -cp.m_normalWorldOnB;
+        }
+        if (m_contactEventMap.find(boB) == m_contactEventMap.end()){
+            m_contactEventMap[boB] = afContactEvent(boA, boB);
+        }
+        m_contactEventMap[boB].m_contactData.push_back(afContactData(P_a_w, P_b_w, N_b_w, cp.m_distance1));
+    }
+    return 0;
+}
+
+///
+/// \brief afContactSensor::afContactSensor
+/// \param a_afWorld
+/// \param a_modelPtr
+///
+afContactSensor::afContactSensor(afWorldPtr a_afWorld, afModelPtr a_modelPtr): afSensor(a_afWorld, a_modelPtr){
+    m_pointCloud = nullptr;
+}
+
+///
+/// \brief afContactSensor::createFromAttribs
+/// \param a_attribs
+/// \return
+///
+bool afContactSensor::createFromAttribs(afContactSensorAttributes *a_attribs){
+    storeAttributes(a_attribs);
+    afContactSensorAttributes &attribs = *a_attribs;
+    m_sensorType = afSensorType::CONTACT;
+
+    bool result = true;
+    setIdentifier(a_attribs->m_identifier);
+    setName(a_attribs->m_identificationAttribs.m_name);
+    setNamespace(a_attribs->m_identificationAttribs.m_namespace);
+
+    m_parentName = a_attribs->m_hierarchyAttribs.m_parentName;
+    m_processContactDetails = a_attribs->m_processContactDetails;
+    // TODO: At the moment the process contact details flag only controls the visualization. Need it to control processing of contact points as well.
+
+    setMinPublishFrequency(a_attribs->m_communicationAttribs.m_minPublishFreq);
+    setMaxPublishFrequency(a_attribs->m_communicationAttribs.m_maxPublishFreq);
+    setPassive(a_attribs->m_communicationAttribs.m_passive);
+
+    if (a_attribs->m_visible){
+        m_pointCloud = new cMultiPoint;
+        m_pointCloud->setPointSize(a_attribs->m_visibleSize);
+        cColorf orange; orange.setOrangeCoral();
+        m_pointCloud->setPointColor(orange);
+        m_pointCloud->setUseVertexColors(true);
+        addChildSceneObject(m_pointCloud, cTransform());
+    }
+
+    // First search in the local space.
+    m_parentBody = m_modelPtr->getRigidBody(m_parentName, true);
+
+    string remap_idx = afUtils::getNonCollidingIdx(getQualifiedIdentifier(), m_afWorld->getSensorMap());
+    setGlobalRemapIdx(remap_idx);
+
+    if(m_parentBody == nullptr){
+        m_parentBody = m_afWorld->getRigidBody(m_parentName + getGlobalRemapIdx());
+        if (m_parentBody == nullptr){
+            cerr << "ERROR! SENSOR'S "<< m_parentName + remap_idx << " NOT FOUND, IGNORING SENSOR\n";
+            return 0;
+        }
+    }
+
+    m_parentBody->addSensor(this);
+    m_parentBody->addChildObject(this);
+
+    m_contactSensorCallback = new afContactSensorCallback(m_parentBody);
+
+    m_contactSensorCallback->m_distanceThreshold = a_attribs->m_distanceThreshold;
+
+    if (m_contactSensorCallback->m_distanceThreshold < 0.0){
+        cerr << "WARNING! For Sensor " << getQualifiedName() << ", contact sensor threshold set to < 0.0. Contact test may be unseccessful " << endl;
+    }
+
+    loadPlugins(this, a_attribs, &a_attribs->m_pluginAttribs);
+
+    loadCommunicationPlugin(this, a_attribs);
+
+    return true;
+}
+
+void afContactSensor::updateSceneObjects(){
+    if (m_pointCloud && m_processContactDetails){
+        m_pointCloud->clear();
+        m_mutex.acquire();
+        for (auto it: m_contactSensorCallback->m_contactEventMap){
+            for (auto pit: it.second.m_contactData){
+                uint i = m_pointCloud->newPoint(pit.m_P_a_w);
+                if (it.second.m_contactObjectB->getType() == afType::RIGID_BODY){
+                    afInertialObjectPtr rbPtr = (afInertialObjectPtr)it.second.m_contactObjectB;
+                    m_pointCloud->m_vertices->setColor(i, rbPtr->m_visualMesh->m_material->m_diffuse);
+                }
+            }
+        }
+        m_mutex.release();
+    }
+}
+
+void afContactSensor::update(double dt){
+    m_mutex.acquire();
+    m_contactSensorCallback->m_contactEventMap.clear();
+    m_afWorld->m_bulletWorld->contactTest(m_parentBody->m_bulletRigidBody, *m_contactSensorCallback);
+
+//    cerr << "INFO! Testing contact for: " << m_parentBody->getQualifiedName();
+//    cerr << "INFO! Object Name " << m_name << endl;
+//    cerr << " Number of objects in contact " << m_contactSensorCallback->m_contactDataMap.size() << endl;
+//    for (auto obj: m_contactSensorCallback->m_contactDataMap){
+//        cerr << "\t " << obj.first->getName() << ", Number of contacts: " << obj.second.size() << " Normal[0]: " <<  obj.second[0].m_globalContactNormalOnB <<  endl;
+//    }
+    m_mutex.release();
+}
+
+
+afContactData::afContactData(cVector3d &P_a_w, cVector3d &P_b_w, cVector3d &N_b_w, double &distance){
+    m_P_a_w = P_a_w;
+    m_P_b_w = P_b_w;
+    m_N_b_w = N_b_w;
+    m_distance = distance;
+}
+
+afContactEvent::afContactEvent(afBaseObjectPtr objA, afBaseObjectPtr objB){
+    m_contactObjectA = objA;
+    m_contactObjectB = objB;
 }

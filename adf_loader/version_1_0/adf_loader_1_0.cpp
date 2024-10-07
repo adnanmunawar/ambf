@@ -211,6 +211,7 @@ bool ADFUtils::getVisualAttribsFromNode(YAML::Node *a_node, afVisualAttributes *
     YAML::Node& node = *a_node;
 
     YAML::Node meshNode = node["mesh"];
+    YAML::Node meshRemoveDuplicatesNode = node["mesh remove duplicates"];
     YAML::Node shapeNode = node["shape"];
     YAML::Node compoundShapeNode = node["compound shape"];
     YAML::Node geometryNode = node["geometry"];
@@ -258,6 +259,13 @@ bool ADFUtils::getVisualAttribsFromNode(YAML::Node *a_node, afVisualAttributes *
         attribs->m_meshFilepath = localPath / meshNode.as<string>();
         if (!attribs->m_meshFilepath.c_str().empty()){
             attribs->m_geometryType = afGeometryType::MESH;
+
+            if (meshRemoveDuplicatesNode.IsDefined()){
+                if (meshRemoveDuplicatesNode.as<bool>() == true){
+                    attribs->m_meshRemoveDuplicates = afStatusFlag::TRUE;}
+                else{
+                    attribs->m_meshRemoveDuplicates = afStatusFlag::FALSE;}
+            }
         }
         else{
             valid = false;
@@ -466,6 +474,9 @@ afSensorType ADFUtils::getSensorTypeFromString(const string &a_str)
     }
     else if (a_str.compare("Resistance") == 0 || a_str.compare("resistance") == 0 || a_str.compare("RESISTANCE") == 0){
         type = afSensorType::RESISTANCE;
+    }
+    else if (a_str.compare("Contact") == 0 || a_str.compare("contact") == 0 || a_str.compare("CONTACT") == 0){
+        type = afSensorType::CONTACT;
     }
 
     return type;
@@ -743,7 +754,8 @@ bool ADFUtils::getInertialAttrisFromNode(YAML::Node *a_node, afInertialAttribute
 
     YAML::Node massNode = node["mass"];
     YAML::Node inertiaNode = node["inertia"];
-    YAML::Node inertialOffset = node["inertial offset"];
+    YAML::Node inertialOffsetNode = node["inertial offset"];
+    YAML::Node gravityNode = node["gravity"];
 
     bool valid = true;
 
@@ -767,9 +779,9 @@ bool ADFUtils::getInertialAttrisFromNode(YAML::Node *a_node, afInertialAttribute
         attribs->m_estimateInertia = true;
     }
 
-    if(inertialOffset.IsDefined()){
-        YAML::Node inertialOffsetPos = inertialOffset["position"];
-        YAML::Node inertialOffsetRot = inertialOffset["orientation"];
+    if(inertialOffsetNode.IsDefined()){
+        YAML::Node inertialOffsetPos = inertialOffsetNode["position"];
+        YAML::Node inertialOffsetRot = inertialOffsetNode["orientation"];
         attribs->m_estimateInertialOffset = false;
 
         if (inertialOffsetPos.IsDefined()){
@@ -784,6 +796,14 @@ bool ADFUtils::getInertialAttrisFromNode(YAML::Node *a_node, afInertialAttribute
     }
     else{
         attribs->m_estimateInertialOffset = true;
+    }
+
+    if (gravityNode.IsDefined()){
+        attribs->m_overrideGravity = true;
+        attribs->m_gravity = ADFUtils::positionFromNode(&gravityNode);
+    }
+    else{
+        attribs->m_overrideGravity = false;
     }
 
     return valid;
@@ -1145,6 +1165,7 @@ bool ADFLoader_1_0::loadLightAttribs(YAML::Node *a_node, afLightAttributes *attr
     YAML::Node spotExponentNode = node["spot exponent"];
     YAML::Node shadowQualityNode = node["shadow quality"];
     YAML::Node cuttOffAngleNode = node["cutoff angle"];
+    YAML::Node attenuationNode = node["attenuation"];
 
     bool valid = true;
 
@@ -1197,6 +1218,13 @@ bool ADFLoader_1_0::loadLightAttribs(YAML::Node *a_node, afLightAttributes *attr
         attribs->m_cuttoffAngle = cuttOffAngleNode.as<double>();
     }
 
+    if (attenuationNode.IsDefined()){
+        attribs->m_attenuationDefined = true;
+        if (attenuationNode["constant"].IsDefined()) attribs->m_constantAttenuation = attenuationNode["constant"].as<double>();
+        if (attenuationNode["linear"].IsDefined()) attribs->m_linearAttenuation = attenuationNode["linear"].as<double>();
+        if (attenuationNode["quadratic"].IsDefined()) attribs->m_quadraticAttenuation = attenuationNode["quadratic"].as<double>();
+    }
+
     return valid;
 }
 
@@ -1237,6 +1265,7 @@ bool ADFLoader_1_0::loadCameraAttribs(YAML::Node *a_node, afCameraAttributes *at
     YAML::Node preProcessingShaderNode = node["preprocessing shaders"];
     YAML::Node depthShaderNode = node["depth compute shaders"];
     YAML::Node multiPassNode = node["multipass"];
+    YAML::Node mouseControlMultiplierNode = node["mouse control multipliers"];
 
     bool valid = true;
 
@@ -1346,6 +1375,21 @@ bool ADFLoader_1_0::loadCameraAttribs(YAML::Node *a_node, afCameraAttributes *at
 
     if (multiPassNode.IsDefined()){
         attribs->m_multiPass = multiPassNode.as<bool>();
+    }
+
+    if (mouseControlMultiplierNode.IsDefined()){
+        if (mouseControlMultiplierNode["pan"].IsDefined()){
+            attribs->m_mouseControlScales.m_pan *= mouseControlMultiplierNode["pan"].as<double>();
+        }
+        if (mouseControlMultiplierNode["rotate"].IsDefined()){
+            attribs->m_mouseControlScales.m_rotate *= mouseControlMultiplierNode["rotate"].as<double>();
+        }
+        if (mouseControlMultiplierNode["scroll"].IsDefined()){
+            attribs->m_mouseControlScales.m_scroll *= mouseControlMultiplierNode["scroll"].as<double>();
+        }
+        if (mouseControlMultiplierNode["arcball"].IsDefined()){
+            attribs->m_mouseControlScales.m_arcball *= mouseControlMultiplierNode["arcball"].as<double>();
+        }
     }
 
     return valid;
@@ -1884,10 +1928,12 @@ bool ADFLoader_1_0::loadJointAttribs(YAML::Node *a_node, afJointAttributes *attr
     }
 
     if(erpNode.IsDefined()){
+        attribs->m_override_erp = true;
         attribs->m_erp = erpNode.as<double>();
     }
 
     if(cfmNode.IsDefined()){
+        attribs->m_override_cfm = true;
         attribs->m_cfm = cfmNode.as<double>();
     }
 
@@ -1942,6 +1988,9 @@ bool ADFLoader_1_0::loadSensorAttribs(YAML::Node *a_node, afSensorAttributes *at
     }
     case afSensorType::RESISTANCE:{
         return loadResistanceSensorAttribs(a_node, (afResistanceSensorAttributes*)attribs);
+    }
+    case afSensorType::CONTACT:{
+        return loadContactSensorAttribs(a_node, (afContactSensorAttributes*)attribs);
     }
         break;
     default:{
@@ -2077,7 +2126,7 @@ bool ADFLoader_1_0::loadResistanceSensorAttribs(YAML::Node *a_node, afResistance
 {
     YAML::Node& node = *a_node;
     if (node.IsNull()){
-        cerr << "ERROR! ACTUATOR'S YAML CONFIG DATA IS NULL\n";
+        cerr << "ERROR! SENSOR'S YAML CONFIG DATA IS NULL\n";
         return 0;
     }
     ADFUtils::saveRawData(a_node, attribs);
@@ -2121,6 +2170,51 @@ bool ADFLoader_1_0::loadResistanceSensorAttribs(YAML::Node *a_node, afResistance
             }
         }
         return result;
+}
+
+bool ADFLoader_1_0::loadContactSensorAttribs(YAML::Node *a_node, afContactSensorAttributes *attribs)
+{
+    YAML::Node& node = *a_node;
+    if (node.IsNull()){
+        cerr << "ERROR! SENSOR'S YAML CONFIG DATA IS NULL\n";
+        return 0;
+    }
+    ADFUtils::saveRawData(a_node, attribs);
+
+    bool result = true;
+
+    YAML::Node nameNode = node["name"];
+    YAML::Node namespaceNode = node["namespace"];
+    YAML::Node parentNameNode = node["parent"];
+    YAML::Node visibleNode = node["visible"];
+    YAML::Node visibleSizeNode = node["visible size"];
+    YAML::Node publishFrequencyNode = node["publish frequency"];
+    YAML::Node distanceThresholdNode = node["distance threshold"];
+    YAML::Node processContactDetailsNode = node["process contact details"];
+
+    ADFUtils::getIdentificationAttribsFromNode(a_node, &attribs->m_identificationAttribs);
+    ADFUtils::getHierarchyAttribsFromNode(a_node, &attribs->m_hierarchyAttribs);
+    ADFUtils::getCommunicationAttribsFromNode(a_node, &attribs->m_communicationAttribs);
+    ADFUtils::getPluginAttribsFromNode(a_node, &attribs->m_pluginAttribs);
+
+
+    if (visibleNode.IsDefined()){
+        attribs->m_visible = visibleNode.as<bool>();
+    }
+
+    if (visibleSizeNode.IsDefined()){
+        attribs->m_visibleSize = visibleSizeNode.as<double>();
+    }
+
+    if (distanceThresholdNode.IsDefined()){
+        attribs->m_distanceThreshold = distanceThresholdNode.as<double>();
+    }
+
+    if (processContactDetailsNode.IsDefined()){
+        attribs->m_processContactDetails = processContactDetailsNode.as<bool>();
+    }
+
+    return result;
 }
 
 bool ADFLoader_1_0::loadActuatorAttribs(YAML::Node *a_node, afActuatorAttributes *attribs)
@@ -2598,6 +2692,7 @@ bool ADFLoader_1_0::loadModelAttribs(YAML::Node *a_node, afModelAttributes *attr
     YAML::Node jointCFMNode = node["joint cfm"];
     YAML::Node ignoreInterCollisionNode = node["ignore inter-collision"];
     YAML::Node shadersNode = node["shaders"];
+    YAML::Node gravityNode = node["gravity"];
 
     bool valid = true;
 
@@ -2616,6 +2711,14 @@ bool ADFLoader_1_0::loadModelAttribs(YAML::Node *a_node, afModelAttributes *attr
         attribs->m_identificationAttribs.m_namespace = nameSpaceNode.as<string>();
     }
 
+    if (gravityNode.IsDefined()){
+        attribs->m_overrideGravity = true;
+        attribs->m_gravity = ADFUtils::positionFromNode(&gravityNode);
+    }
+    else{
+        attribs->m_overrideGravity = false;
+    }
+
     // Load Rigid Bodies
     for (size_t i = 0; i < rigidBodiesNode.size(); ++i) {
         afRigidBodyAttributes rbAttribs;
@@ -2625,6 +2728,10 @@ bool ADFLoader_1_0::loadModelAttribs(YAML::Node *a_node, afModelAttributes *attr
             rbAttribs.m_identifier = identifier;
             rbAttribs.m_visualAttribs.m_meshFilepath.resolvePath(attribs->m_visualMeshesPath);
             rbAttribs.m_collisionAttribs.m_meshFilepath.resolvePath(attribs->m_collisionMeshesPath);
+            if (!rbAttribs.m_inertialAttribs.m_overrideGravity && attribs->m_overrideGravity){
+                rbAttribs.m_inertialAttribs.m_overrideGravity = true;
+                rbAttribs.m_inertialAttribs.m_gravity = attribs->m_gravity;
+            }
             attribs->m_rigidBodyAttribs.push_back(rbAttribs);
         }
     }
@@ -2638,6 +2745,10 @@ bool ADFLoader_1_0::loadModelAttribs(YAML::Node *a_node, afModelAttributes *attr
             sbAttribs.m_identifier = identifier;
             sbAttribs.m_visualAttribs.m_meshFilepath.resolvePath(attribs->m_visualMeshesPath);
             sbAttribs.m_collisionAttribs.m_meshFilepath.resolvePath(attribs->m_collisionMeshesPath);
+            if (!sbAttribs.m_inertialAttribs.m_overrideGravity && attribs->m_overrideGravity){
+                sbAttribs.m_inertialAttribs.m_overrideGravity = true;
+                sbAttribs.m_inertialAttribs.m_gravity = attribs->m_gravity;
+            }
             attribs->m_softBodyAttribs.push_back(sbAttribs);
         }
     }
@@ -2670,6 +2781,10 @@ bool ADFLoader_1_0::loadModelAttribs(YAML::Node *a_node, afModelAttributes *attr
             }
             case afSensorType::RESISTANCE:{
                 senAttribs = new afResistanceSensorAttributes();
+                break;
+            }
+            case afSensorType::CONTACT:{
+                senAttribs = new afContactSensorAttributes();
                 break;
             }
             default:

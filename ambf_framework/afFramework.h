@@ -98,6 +98,9 @@ class afJointController;
 class afConstraintActuator;
 class afRayTracerSensor;
 class afResistanceSensor;
+class afContactSensor;
+class afContactData;
+class afContactEvent;
 
 
 typedef afBaseObject* afBaseObjectPtr;
@@ -111,6 +114,9 @@ typedef afWorld* afWorldPtr;
 typedef afConstraintActuator* afConstraintActuatorPtr;
 typedef afRayTracerSensor* afRayTracerSensorPtr;
 typedef afResistanceSensor* afResistanceSensorPtr;
+typedef afContactData* afContactDataPtr;
+typedef afContactEvent* afContactEventPtr;
+typedef afContactSensor* afContactSensorPtr;
 
 typedef map<string, afRigidBodyPtr> afRigidBodyMap;
 typedef map<string, afSoftBodyPtr> afSoftBodyMap;
@@ -120,6 +126,7 @@ typedef vector<afRigidBodyPtr> afRigidBodyVec;
 typedef vector<afSoftBodyPtr> afSoftBodyVec;
 typedef vector<afGhostObjectPtr> afGhostObjectVec;
 typedef vector<afJointPtr> afJointVec;
+typedef map<afBaseObjectPtr, afContactEvent> afContactEventMap;
 //------------------------------------------------------------------------------
 class afCamera;
 typedef afCamera* afCameraPtr;
@@ -174,9 +181,9 @@ public:
 
     static btCollisionShape* createCollisionShape(const afPrimitiveShapeAttributes* a_primitiveShape, double a_margin);
 
-    static btCollisionShape* createCollisionShape(const cMesh* a_collisionMesh, double a_margin, afCollisionMeshShapeType a_meshType);
+    static btCollisionShape* createCollisionShape(cMesh* a_collisionMesh, double a_margin, afCollisionMeshShapeType a_meshType);
 
-    static btCompoundShape* createCollisionShape(const cMultiMesh* a_collisionMesh, double a_margin, afTransform m_inertialOffset, afCollisionMeshShapeType a_meshType);
+    static btCompoundShape* createCollisionShape(cMultiMesh* a_collisionMesh, double a_margin, afTransform m_inertialOffset, afCollisionMeshShapeType a_meshType);
 
     static std::vector<afRayAttributes> createRayAttribs(cMultiMesh* a_contourMesh, double a_range);
 };
@@ -928,6 +935,8 @@ public:
 
     void estimateInertia();
 
+    void setGravity(const cVector3d& a_gravity);
+
     inline double getMass(){return m_mass;}
 
     inline btVector3 getInertia(){return m_inertia;}
@@ -984,6 +993,10 @@ protected:
 
     // Inertia
     btVector3 m_inertia;
+
+    // Gravity
+    cVector3d m_gravity;
+    bool m_overrideGravity;
 };
 
 ///
@@ -1186,7 +1199,32 @@ private:
     afGeometryType m_collisionGeometryType;
 };
 
+struct afContactData{
+public:
 
+    afContactData(cVector3d& gpA, cVector3d& gpB, cVector3d& gnB, double& distance);
+
+    cVector3d m_P_a_w; // Point on A in world coords
+
+    cVector3d m_P_b_w; // Point on B in world coords
+    cVector3d m_N_b_w;// Normal on A in world coords
+
+    double m_distance; // Separating distance. Or penetration depth.
+};
+
+
+struct afContactEvent{
+    afContactEvent(){}
+    afContactEvent(afBaseObjectPtr objA, afBaseObjectPtr objB);
+    afBaseObjectPtr m_contactObjectA;
+    afBaseObjectPtr m_contactObjectB;
+    vector<afContactData> m_contactData;
+};
+
+
+///
+/// \brief The afVertexTree struct
+///
 struct afVertexTree{
     std::vector<int> triangleIdx;
     std::vector<int> vertexIdx;
@@ -1250,24 +1288,10 @@ public:
     bool createLinksFromLines(btSoftBody* a_sb, std::vector< std::vector<int>>* a_lines, cMesh* a_mesh);
 
     // Copied from btSoftBodyHelpers with few modifications
-    btSoftBody* createFromMesh(btSoftBodyWorldInfo& worldInfo, const btScalar* vertices, int nNodes, const unsigned int* triangles, int ntriangles, bool randomizeConstraints=true);
+    btSoftBody* createFromMesh(btSoftBodyWorldInfo* worldInfo, cMesh* a_mesh, bool randomizeConstraints=true);
 
     //! This method toggles the drawing of skeletal model.
     void toggleSkeletalModelVisibility();
-
-private:
-    // Ptr to scalar vertex arrays of the sofy body
-    std::vector<btScalar> m_verticesPtr;
-
-    // Ptr to Triangles arrays referring to vertices by indices
-    std::vector<unsigned int> m_trianglesPtr;
-
-    // Vertex Tree containing vtx idx's that are repeated for a given vtx
-    std::vector<afVertexTree> m_afVertexTree;
-
-    // Boolean flag to indicate if we have been successful in reducing the mesh.
-    // A reduced mesh should speed up rendering.
-    bool m_meshReductionSuccessful;
 };
 
 
@@ -1296,10 +1320,9 @@ public:
 
     btPairCachingGhostObject* m_bulletGhostObject;
 
+    map<afBaseObjectPtr, double> m_sensedObjectsMaps;
+
 protected:
-
-    std::vector<btRigidBody*> m_sensedBodies;
-
     static btGhostPairCallback* m_bulletGhostPairCallback;
 };
 
@@ -1322,6 +1345,8 @@ public:
     virtual bool createFromAttribs(afJointAttributes* a_attribs);
 
     virtual void update(double dt);
+
+    afRigidBodyPtr findConnectingBody(string body_name);
 
     btVector3 getDefaultJointAxisInParent(afJointType a_type);
 
@@ -1648,6 +1673,54 @@ public:
 };
 
 
+struct afContactSensorCallback : public btCollisionWorld::ContactResultCallback {
+
+    ~afContactSensorCallback();
+
+    //! Constructor, pass whatever context you want to have available when processing contacts
+    /*! You may also want to set m_collisionFilterGroup and m_collisionFilterMask
+     *  (supplied by the superclass) for needsCollision() */
+    afContactSensorCallback(afBaseObjectPtr a_parentObject) : btCollisionWorld::ContactResultCallback(), m_parentObject(a_parentObject){ }
+
+    afBaseObjectPtr m_parentObject; //!< The object the sensor is monitoring
+
+    //! If you don't want to consider collisions where the bodies are joined by a constraint, override needsCollision:
+    /*! However, if you use a btCollisionObject for #body instead of a btRigidBody,
+     *  then this is unnecessary—checkCollideWithOverride isn't available */
+    virtual bool needsCollision(btBroadphaseProxy* proxy) const;
+
+    //! Called with each contact for your own processing (e.g. test if contacts fall in within sensor parameters)
+    virtual btScalar addSingleResult(btManifoldPoint& cp,
+        const btCollisionObjectWrapper* colObj0,int partId0,int index0,
+        const btCollisionObjectWrapper* colObj1,int partId1,int index1);
+
+
+
+    afContactEventMap m_contactEventMap;
+    double m_distanceThreshold = 0.0;
+};
+
+
+class afContactSensor: public afSensor{
+public:
+    afContactSensor(afWorldPtr a_afWorld, afModelPtr a_modelPtr);
+
+    virtual bool createFromAttribs(afContactSensorAttributes* a_attribs);
+
+    virtual void updateSceneObjects();
+
+    virtual void update(double dt);
+
+    bool m_processContactDetails;
+
+    afContactSensorCallback* m_contactSensorCallback;
+
+    cMultiPointPtr m_pointCloud;
+
+    cMutex m_mutex;
+};
+
+
 ///
 /// \brief This is an implementation of Sleep function that tries to adjust sleep between each cycle to maintain
 /// the desired loop frequency. This class has been inspired from ROS Rate Sleep written by Eitan Marder-Eppstein
@@ -1963,6 +2036,9 @@ public:
 
 public:
     bool m_cam_pressed;
+
+    afMouseControlScales m_mouseControlScales;
+
     GLFWwindow* m_window;
 
     static GLFWwindow* s_mainWindow;
@@ -2128,6 +2204,18 @@ public:
 
     cGenericLight* getInternalLight();
 
+    double getConstantAttenuation(){return m_spotLight->getAttConstant();}
+
+    double getLinearAttenuation(){return m_spotLight->getAttLinear();}
+
+    double getQuadraticAttenuation(){return m_spotLight->getAttQuadratic();}
+
+    void setConstantAttenuation(double att){m_spotLight->setAttConstant(att);}
+
+    void setLinearAttenuation(double att){m_spotLight->setAttLinear(att);}
+
+    void setQuadraticAttenuation(double att){m_spotLight->setAttQuadratic(att);}
+
 protected:
     cSpotLight* m_spotLight;
 
@@ -2237,7 +2325,7 @@ public:
     int getMaxIterations(){return m_maxIterations;}
 
     // This method returns the current simulation time
-    double getWallTime(){return m_wallClock;}
+    double getWallTime(){return m_wallClock.getCurrentTimeSeconds();}
 
     // This method returns the current simulation time
     double getSimulationTime(){return m_simulationTime;}
@@ -2252,7 +2340,7 @@ public:
     void estimateBodyWrenches();
 
     //! This method updates the simulation over a time interval.
-    virtual void updateDynamics(double a_interval, double a_wallClock=0, double a_loopFreq = 0, int a_numDevices = 0);
+    virtual void updateDynamics(double a_interval, int a_numDevices = 0);
 
     //! This method updates the position and orientation from Bullet models to CHAI3D models.
     virtual void updateSceneObjects();
@@ -2285,7 +2373,9 @@ public:
 
     bool isHeadless();
 
-    int getPhysicsFrequency(){return m_physicsFreq;}
+    int getPhysicsFrequency(){return m_freqCounterPhysics.getFrequency();}
+
+    int getGraphicsFrequency(){return m_freqCounterGraphics.getFrequency();}
 
     int getNumDevices(){return m_numDevices;}
 
@@ -2338,9 +2428,9 @@ public:
 
     cVector3d m_pickedOffset;
 
-    cMesh* m_pickSphere = nullptr;
+    cMultiPointPtr m_pickMultiPoint = nullptr;
 
-    cPrecisionClock g_wallClock;
+    cPrecisionClock m_wallClock;
 
     // Vertex Shader Filepath
     afPath m_vsFilePath;
@@ -2364,7 +2454,7 @@ public:
     cFrequencyCounter m_freqCounterGraphics;
 
     // a frequency counter to measure the simulation haptic rate
-    cFrequencyCounter m_freqCounterHaptics;
+    cFrequencyCounter m_freqCounterPhysics;
 
     map<string, afPointCloudPtr> m_pcMap;
 
@@ -2405,18 +2495,13 @@ protected:
     // Integration time step.
     double m_integrationTimeStep;
 
-    // Wall Clock in Secs
-    double m_wallClock;
-
-    // Last Simulation Time
+    // Last Simulation Timebn
     double m_lastSimulationTime;
 
     // Maximum number of iterations.
     int m_integrationMaxIterations;
 
     afWorldPluginManager m_pluginManager;
-
-    int m_physicsFreq = 0;
 
     int m_numDevices = 0;
 

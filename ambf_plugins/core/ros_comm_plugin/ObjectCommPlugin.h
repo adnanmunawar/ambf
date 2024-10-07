@@ -52,6 +52,7 @@
 #include "ambf_server/Light.h"
 #include "ambf_server/Object.h"
 #include "ambf_server/RigidBody.h"
+#include "ambf_server/GhostObject.h"
 #include "ambf_server/Sensor.h"
 #include "ambf_server/Vehicle.h"
 #include "ambf_server/World.h"
@@ -104,6 +105,9 @@ public:
     void rigidBodyFetchCommand(afRigidBodyPtr, double);
     void rigidBodyUpdateState(afRigidBodyPtr, double);
 
+    void ghostObjectFetchCommand(afGhostObjectPtr, double);
+    void ghostObjectUpdateState(afGhostObjectPtr, double);
+
     void sensorFetchCommand(afSensorPtr, double);
     void sensorUpdateState(afSensorPtr, double);
 
@@ -124,7 +128,9 @@ public:
     std::shared_ptr<ambf_comm::Light> m_lightCommPtr;
     std::shared_ptr<ambf_comm::Object> m_objectCommPtr;
     std::shared_ptr<ambf_comm::RigidBody> m_rigidBodyCommPtr;
+    std::shared_ptr<ambf_comm::GhostObject> m_ghostObjectCommPtr;
     std::shared_ptr<ambf_comm::Sensor> m_sensorCommPtr;
+    std::shared_ptr<ambf_comm::ContactSensor> m_contactSensorCommPtr;
     std::shared_ptr<ambf_comm::Vehicle> m_vehicleCommPtr;
     std::shared_ptr<ambf_comm::PointCloudHandler> m_pointCloudCommPtr;
 protected:
