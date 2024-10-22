@@ -556,13 +556,13 @@ public:
         return m_attributes;
     }
 
-    cVector3d getLocalPos();
+    virtual cVector3d getLocalPos();
 
-    cMatrix3d getLocalRot();
+    virtual cMatrix3d getLocalRot();
 
-    cTransform getLocalTransform();
+    virtual cTransform getLocalTransform();
 
-    cTransform getGlobalTransform();
+    virtual cTransform getGlobalTransform();
 
     double getWallTime();
 
@@ -577,19 +577,19 @@ public:
 
     inline cTransform getParentGlobalTransform();
 
-    void setLocalPos(const cVector3d &pos);
+    virtual void setLocalPos(const cVector3d &pos);
 
-    void setLocalPos(const afVector3d &pos);
+    virtual void setLocalPos(const afVector3d &pos);
 
-    void setLocalPos(double px, double py, double pz);
+    virtual void setLocalPos(double px, double py, double pz);
 
-    void setLocalRot(const cMatrix3d &mat);
+    virtual void setLocalRot(const cMatrix3d &mat);
 
-    void setLocalRot(const afMatrix3d &mat);
+    virtual void setLocalRot(const afMatrix3d &mat);
 
-    void setLocalRot(const cQuaternion &quat);
+    virtual void setLocalRot(const cQuaternion &quat);
 
-    void setLocalRot(double qx, double qy, double qz, double qw);
+    virtual void setLocalRot(double qx, double qy, double qz, double qw);
 
     virtual void setLocalTransform(const cTransform &trans);
 
@@ -948,8 +948,14 @@ public:
     // Get Center of Mass Transform
     btTransform getCOMTransform();
 
+    // Get Local Transform
+    virtual cTransform getLocalTransform();
+
     // Get Center of Mass Transform
     btTransform getLocalCOMTransform();
+
+    // Get Global Transform
+    virtual cTransform getGlobalTransform();
 
     // Get Center of Mass Transform
     btTransform getGlobalCOMTransform();
@@ -1025,7 +1031,7 @@ public:
 
     virtual void setLocalTorque(const cVector3d &torque);
 
-    virtual void setGlobalCOMTransform(const cTransform &trans);
+    virtual void setGlobalTransform(const cTransform &trans);
 
     virtual void setGlobalLinearVelocity(const cVector3d &vel);
 

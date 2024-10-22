@@ -1988,17 +1988,30 @@ btTransform afInertialObject::getCOMTransform()
 
 
 ///
+/// \brief afInertialObject::getLocalTransform
+/// \return
+///
+cTransform afInertialObject::getLocalTransform(){
+    return to_cTransform(getLocalCOMTransform() * getInverseInertialOffsetTransform());
+}
+
+
+///
 /// \brief afInertialObject::getLocalCOMTransform
 /// \return
 ///
 btTransform afInertialObject::getLocalCOMTransform(){
     // Inertial Transform
-    btTransform T_w_p; T_w_p.setIdentity();
-    if (m_parentObject){
-        T_w_p << m_parentObject->getGlobalTransform();
-        T_w_p = T_w_p.inverse();
-    }
-    return (T_w_p * getGlobalCOMTransform());
+    return (to_btTransform(getParentGlobalTransform()).inverse() * getGlobalCOMTransform());
+}
+
+
+///
+/// \brief afInertialObject::getGlobalTransform
+/// \return
+///
+cTransform afInertialObject::getGlobalTransform(){
+    return to_cTransform(getGlobalCOMTransform() * getInverseInertialOffsetTransform());
 }
 
 ///
@@ -2006,10 +2019,7 @@ btTransform afInertialObject::getLocalCOMTransform(){
 /// \return
 ///
 btTransform afInertialObject::getGlobalCOMTransform(){
-    // Inertial Transform
-    btTransform T_iINw;
-    m_bulletRigidBody->getMotionState()->getWorldTransform(T_iINw);
-    return (T_iINw * getInverseInertialOffsetTransform());
+    return m_bulletRigidBody->getWorldTransform();
 }
 
 
@@ -2575,12 +2585,13 @@ bool afRigidBody::createFromAttribs(afRigidBodyAttributes *a_attribs)
 
     createInertialObject();
 
-    // inertial origin in world
-    cTransform T_iINw = to_cTransform(a_attribs->m_kinematicAttribs.m_location);
-    cTransform T_mINw = T_iINw * to_cTransform(getInertialOffsetTransform());
+    // object in world
+    cTransform T_oINw = to_cTransform(a_attribs->m_kinematicAttribs.m_location);
+    // Inertial point in world
+    cTransform T_iINw = T_oINw * to_cTransform(getInertialOffsetTransform());
 
-    setInitialTransform(T_mINw);
-    setLocalTransform(T_mINw);
+    setInitialTransform(T_oINw);
+    setLocalTransform(T_oINw);
 
     setSurfaceProperties(a_attribs->m_surfaceAttribs);
 
@@ -2685,11 +2696,11 @@ void afRigidBody::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransf
         return;
     }
 
-    if (m_bulletRigidBody->isStaticOrKinematicObject()){
+    if (a_forceUpdate && m_bulletRigidBody->isStaticOrKinematicObject()){
         m_globalTransform = a_parentTransform * m_localTransform;
     }
     else{
-        m_globalTransform << getGlobalCOMTransform();
+        m_globalTransform = getGlobalTransform();
     }
 
     vector<afBaseObjectPtr>::const_iterator it;
@@ -2701,15 +2712,15 @@ void afRigidBody::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransf
 
 void afRigidBody::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
     if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
-        // Don't update the pose as this object as the parent is
-        // responsible for it.
+        // Don't update the pose as this objecs's parent is responsible for it.
         return;
     }
     cTransform parentInverseTransform = a_parentTransform; parentInverseTransform.invert();
-    cTransform localTransform = parentInverseTransform * to_cTransform(getGlobalCOMTransform());
+    cTransform localTransform = parentInverseTransform * getGlobalTransform();
 
     if (a_forceUpdate && m_bulletRigidBody->isStaticOrKinematicObject()){
         setLocalTransform(m_localTransform);
+//        afBaseObject::setLocalTransform(localTransform);
     }
     else{
         afBaseObject::setLocalTransform(localTransform);
@@ -2718,7 +2729,7 @@ void afRigidBody::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransfo
     vector<afBaseObjectPtr>::const_iterator it;
 
     for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
-        (*it)->updateLocalPose(true, to_cTransform(getGlobalCOMTransform()));
+        (*it)->updateLocalPose(true, getGlobalTransform());
     }
 }
 
@@ -2880,15 +2891,6 @@ afRigidBody::~afRigidBody(){
     }
 }
 
-///
-/// \brief afRigidBody::setLocalTransform
-/// \param T_b_p
-///
-void afRigidBody::setLocalTransform(const cTransform &T_b_p){
-    setGlobalCOMTransform(getParentGlobalTransform() * T_b_p);
-    afBaseObject::setLocalTransform(T_b_p);
-}
-
 void afRigidBody::setLocalLinearVelocity(const cVector3d &vel){
     setGlobalLinearVelocity(getParentGlobalTransform().getLocalRot() * vel);
 }
@@ -2910,15 +2912,26 @@ void afRigidBody::setLocalTorque(const cVector3d &torque){
     setGlobalTorque(getParentGlobalTransform().getLocalRot() * torque);
 }
 
-
 ///
-/// \brief afRigidBody::setGlobalCOMTransform
+/// \brief afRigidBody::setLocalTransform
 /// \param trans
 ///
-void afRigidBody::setGlobalCOMTransform(const cTransform &T_b_w){
-    btTransform T_bi_w = to_btTransform(T_b_w) * getInertialOffsetTransform();
-    m_bulletMotionState->setWorldTransform(T_bi_w);
-    m_bulletRigidBody->setCenterOfMassTransform(T_bi_w);
+void afRigidBody::setLocalTransform(const cTransform &trans){
+    setGlobalTransform(getParentGlobalTransform() * trans);
+    afBaseObject::setLocalTransform(trans);
+}
+
+///
+/// \brief afRigidBody::setGlobalTransform
+/// \param trans
+///
+void afRigidBody::setGlobalTransform(const cTransform &trans){
+    btTransform btTrans = to_btTransform(trans) * getInertialOffsetTransform();
+//    m_bulletRigidBody->getMotionState()->setWorldTransform(btTrans);
+    m_bulletRigidBody->setWorldTransform(btTrans);
+    m_localTransform = getLocalTransform();
+//    if (getName().compare("B") == 0) cerr << m_localTransform.getLocalRot().str() << endl;
+//    m_globalTransform = trans;
 }
 
 void afRigidBody::setGlobalLinearVelocity(const cVector3d &vel){
@@ -6214,7 +6227,7 @@ bool afWorld::pickBody(const cVector3d &rayFromWorld, const cVector3d &rayToWorl
                 }
                 else{
                     cVector3d com;
-                    com << body->getCenterOfMassPosition();
+                    com = m_pickedRigidBody->getGlobalTransform().getLocalPos();
                     m_pickedOffset = com - pickPos;
                 }
             }
@@ -6289,18 +6302,17 @@ bool afWorld::movePickedBody(const cVector3d &rayFromWorld, const cVector3d &ray
         }
         else{
             // In this case the rigidBody is a static or kinematic body
-            btTransform curTrans = m_pickedBulletRigidBody->getWorldTransform();
-            curTrans.setOrigin(to_btVector(newLocation + m_pickedOffset));
-//            m_pickedBulletRigidBody->getMotionState()->setWorldTransform(curTrans);
-//            m_pickedBulletRigidBody->setWorldTransform(curTrans);
-
+//            btTransform curTrans = m_pickedBulletRigidBody->getWorldTransform();
+//            curTrans.setOrigin(to_btVector(newLocation + m_pickedOffset));
             afRigidBodyPtr afRB = getRigidBody(m_pickedBulletRigidBody);
-            btTransform T_p_w; T_p_w.setIdentity();
-            if (afRB->getParentObject()){
-                    T_p_w << afRB->getParentObject()->getGlobalTransform();
-            }
-//            afRB->m_localTransform = to_cTransform(T_p_w.inverse() * curTrans);
-            afRB->setLocalTransform(to_cTransform(T_p_w.inverse() * curTrans));
+            cTransform curTrans = afRB->getLocalTransform();
+            curTrans.setLocalPos(newLocation + m_pickedOffset);
+            btTransform bTrans;
+            bTrans << curTrans;
+//            m_pickedBulletRigidBody->getMotionState()->setWorldTransform(bTrans);
+//            m_pickedBulletRigidBody->setWorldTransform(bTrans);
+//            afRB->setLocalTransform(curTrans);
+            afRB->setGlobalTransform(curTrans);
             return true;
         }
     }
