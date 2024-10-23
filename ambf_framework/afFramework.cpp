@@ -6305,7 +6305,7 @@ bool afWorld::movePickedBody(const cVector3d &rayFromWorld, const cVector3d &ray
 //            btTransform curTrans = m_pickedBulletRigidBody->getWorldTransform();
 //            curTrans.setOrigin(to_btVector(newLocation + m_pickedOffset));
             afRigidBodyPtr afRB = getRigidBody(m_pickedBulletRigidBody);
-            cTransform curTrans = afRB->getLocalTransform();
+            cTransform curTrans = afRB->getGlobalTransform();
             curTrans.setLocalPos(newLocation + m_pickedOffset);
             btTransform bTrans;
             bTrans << curTrans;
