@@ -575,6 +575,8 @@ public:
 
     inline afBaseObjectPtr getParentObject(){return m_parentObject;}
 
+    bool hasParent();
+
     inline cTransform getParentGlobalTransform();
 
     virtual void setLocalPos(const cVector3d &pos);

@@ -978,6 +978,14 @@ double afBaseObject::getSimulationTime(){
     return m_afWorld->getSimulationTime();
 }
 
+///
+/// \brief afBaseObject::hasParent
+/// \return
+///
+bool afBaseObject::hasParent(){
+    return (getParentObject()) == nullptr ? false : true;
+}
+
 cTransform afBaseObject::getParentGlobalTransform(){
     cTransform T_p_w;
     if (getParentObject() != nullptr){
@@ -2019,7 +2027,7 @@ cTransform afInertialObject::getGlobalTransform(){
 /// \return
 ///
 btTransform afInertialObject::getGlobalCOMTransform(){
-    return m_bulletRigidBody->getWorldTransform();
+    return m_bulletRigidBody->getCenterOfMassTransform();
 }
 
 
@@ -2689,6 +2697,37 @@ void afRigidBody::update(double dt)
     updateLocalPose(false, cTransform());
 }
 
+///
+/// \brief afRigidBody::updateLocalPose
+/// \param a_forceUpdate
+/// \param a_parentTransform
+///
+void afRigidBody::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
+    if ( (hasParent() == true) && (a_forceUpdate == false) ){
+        // Don't update the pose as this objecs's parent is responsible for it.
+        return;
+    }
+    cTransform parentInverseTransform = a_parentTransform; parentInverseTransform.invert();
+    cTransform localTransform = parentInverseTransform * getGlobalTransform();
+
+    if (m_bulletRigidBody->isStaticOrKinematicObject()){
+        setLocalTransform(m_localTransform);
+    }
+    else{
+        afBaseObject::setLocalTransform(localTransform);
+    }
+
+    vector<afBaseObjectPtr>::const_iterator it;
+    for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
+        (*it)->updateLocalPose(true, getGlobalTransform());
+    }
+}
+
+///
+/// \brief afRigidBody::updateGlobalPose
+/// \param a_forceUpdate
+/// \param a_parentTransform
+///
 void afRigidBody::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransform){
     if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
         // Don't update the pose as this object as the parent is
@@ -2707,29 +2746,6 @@ void afRigidBody::updateGlobalPose(bool a_forceUpdate, cTransform a_parentTransf
 
     for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
         (*it)->updateGlobalPose(true, m_globalTransform);
-    }
-}
-
-void afRigidBody::updateLocalPose(bool a_forceUpdate, cTransform a_parentTransform){
-    if ( (getParentObject() != nullptr) && (a_forceUpdate == false) ){
-        // Don't update the pose as this objecs's parent is responsible for it.
-        return;
-    }
-    cTransform parentInverseTransform = a_parentTransform; parentInverseTransform.invert();
-    cTransform localTransform = parentInverseTransform * getGlobalTransform();
-
-    if (a_forceUpdate && m_bulletRigidBody->isStaticOrKinematicObject()){
-        setLocalTransform(m_localTransform);
-//        afBaseObject::setLocalTransform(localTransform);
-    }
-    else{
-        afBaseObject::setLocalTransform(localTransform);
-    }
-
-    vector<afBaseObjectPtr>::const_iterator it;
-
-    for (it = m_childrenObjects.begin() ; it != m_childrenObjects.end() ; ++it){
-        (*it)->updateLocalPose(true, getGlobalTransform());
     }
 }
 
@@ -2893,15 +2909,18 @@ afRigidBody::~afRigidBody(){
 
 void afRigidBody::setLocalLinearVelocity(const cVector3d &vel){
     setGlobalLinearVelocity(getParentGlobalTransform().getLocalRot() * vel);
+    afBaseObject::setLocalTransform(getLocalTransform());
 }
 
 void afRigidBody::setLocalAngularVelocity(const cVector3d &vel){
     setGlobalAngularVelocity(getParentGlobalTransform().getLocalRot() * vel);
+    afBaseObject::setLocalTransform(getLocalTransform());
 }
 
 void afRigidBody::setLocalTwist(const cVector3d &linear, const cVector3d &angular){
     setLocalLinearVelocity(linear);
     setLocalAngularVelocity(angular);
+    afBaseObject::setLocalTransform(getLocalTransform());
 }
 
 void afRigidBody::setLocalForce(const cVector3d &force, const cVector3d &offset){
@@ -2916,9 +2935,9 @@ void afRigidBody::setLocalTorque(const cVector3d &torque){
 /// \brief afRigidBody::setLocalTransform
 /// \param trans
 ///
-void afRigidBody::setLocalTransform(const cTransform &trans){
-    setGlobalTransform(getParentGlobalTransform() * trans);
-    afBaseObject::setLocalTransform(trans);
+void afRigidBody::setLocalTransform(const cTransform &Tcmd){
+    setGlobalTransform(getParentGlobalTransform() * Tcmd);
+    afBaseObject::setLocalTransform(Tcmd);
 }
 
 ///

@@ -651,7 +651,6 @@ void afObjectCommunicationPlugin::rigidBodyFetchCommand(afRigidBodyPtr afRBPtr, 
 {
     btRigidBody* btRBPtr = afRBPtr->m_bulletRigidBody;
     ambf_msgs::RigidBodyCmd afCommand = m_rigidBodyCommPtr->get_command();
-
     // IF THE COMMAND IS OF TYPE FORCE
     switch (afCommand.cartesian_cmd_type) {
     case ambf_msgs::RigidBodyCmd::TYPE_FORCE:{
@@ -664,7 +663,18 @@ void afObjectCommunicationPlugin::rigidBodyFetchCommand(afRigidBodyPtr afRBPtr, 
         afRBPtr->m_activeControllerType = afControlType::POSITION;
         // If the body is kinematic, we just want to control the position
         cTransform Tcommand = chai3d::toTransform(afCommand.pose);
-        if (btRBPtr->isStaticOrKinematicObject()){
+        cQuaternion quat;
+        quat.fromRotMat(Tcommand.getLocalRot());
+        if( abs(1.0 - quat.length()) > 0.1){
+            cerr << "WARNING! BODY \"" << afRBPtr->getName() << "'s\" rotation quaternion command"
+                                                                " not normalized: " << quat.str() << endl;
+            quat.normalize();
+            cMatrix3d rotMat;
+            quat.toRotMat(rotMat);
+            Tcommand.setLocalRot(rotMat);
+        }
+
+        if (btRBPtr->isStaticOrKinematicObject() || afRBPtr->m_controller.m_positionOutputType == afControlType::POSITION){
 
             // cerr << "Updating Static Object Pose \n";
             afRBPtr->setLocalTransform(Tcommand);
@@ -672,16 +682,6 @@ void afObjectCommunicationPlugin::rigidBodyFetchCommand(afRigidBodyPtr afRBPtr, 
         }
         else{
             cTransform Tcurr = afRBPtr->getLocalTransform();
-            cQuaternion quat;
-            quat.fromRotMat(Tcurr.getLocalRot());
-            if( abs(1.0 - quat.length()) < 0.1){
-                cerr << "WARNING: BODY \"" << afRBPtr->getName() << "'s\" rotation quaternion command"
-                                                        " not normalized" << endl;
-                cMatrix3d rotMat;
-                quat.normalize();
-                quat.toRotMat(rotMat);
-                Tcurr.setLocalRot(rotMat);
-            }
 
             cVector3d pCommand, rCommand;
             // Use the internal Cartesian Position Controller to Compute Output
