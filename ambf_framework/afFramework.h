@@ -2319,10 +2319,13 @@ public:
     void setIntegrationSettings(const double a_integrationTimeStep = 0.001, const int a_integrationMaxIterations = 1) { setIntegrationTimeStep(a_integrationTimeStep); setIntegrationMaxIterations(a_integrationMaxIterations); }
 
     // This method sets the internal integration time step of the simulation.
-    void setIntegrationTimeStep(const double a_integrationTimeStep = 0.001) { m_integrationTimeStep = cMax(a_integrationTimeStep, 0.000001); }
+    void setIntegrationTimeStep(const double a_integrationTimeStep);
 
     // The method returns the integration time step of the simulation.
     double getIntegrationTimeStep() { return (m_integrationTimeStep); }
+
+    // Current computed step size which could be different from the integration time step if the simulation is running in real-time
+    double getCurrentTimeStep(){return m_dt;}
 
     // This method sets the maximum number of iteration per integration time step.
     void setIntegrationMaxIterations(const int a_integrationMaxIterations = 1) { m_integrationMaxIterations = cMax(a_integrationMaxIterations, 1); }
@@ -2522,6 +2525,9 @@ private:
     static double m_enclosureH;
 
     static int m_maxIterations;
+
+    // Current simulation step size. This could be variable if the sim is run in dynamic mode -t flag == False
+    double m_dt;
 
     // Global flag to pause simulation
     bool m_pausePhx = false;

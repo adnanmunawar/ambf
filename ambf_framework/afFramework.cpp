@@ -5567,6 +5567,20 @@ void afWorld::setGravity(afVector3d &vec)
 
 
 ///
+/// \brief afWorld::setIntegrationTimeStep
+/// \param a_integrationTimeStep
+///
+void afWorld::setIntegrationTimeStep(const double a_integrationTimeStep) {
+    if (a_integrationTimeStep <= 0.){
+        cerr << "ERROR! INTEGRATION TIME STEP: " << a_integrationTimeStep  << " <= 0.0. USING DEFAULT VALUE \n";
+    }
+    else{
+        m_integrationTimeStep = a_integrationTimeStep;
+    }
+}
+
+
+///
 /// \brief afWorld::getSimulationDeltaTime
 /// \return
 ///
@@ -5607,6 +5621,8 @@ void afWorld::updateDynamics(double a_interval, int a_numDevices)
             return;
         }
     }
+
+    m_dt = a_interval;
 
     m_freqCounterPhysics.signal(1);
     m_numDevices = a_numDevices;
