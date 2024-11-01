@@ -343,8 +343,11 @@ public:
 
     // Set Controller Gains
     inline void setP_lin(double a_P) {P_lin = a_P;}
+    inline void setI_lin(double a_I) {I_lin = a_I;}
     inline void setD_lin(double a_D) {D_lin = a_D;}
+
     inline void setP_ang(double a_P) {P_ang = a_P;}
+    inline void setI_ang(double a_I) {I_ang = a_I;}
     inline void setD_ang(double a_D) {D_ang = a_D;}
 
     template <typename T1, typename T2>
@@ -362,15 +365,16 @@ public:
 private:
 
     // Vector storing the current position error
-    btVector3 m_dPos;
-    cVector3d m_dPos_cvec;
+    cVector3d m_Pe;
     // Matrix storing the current rotation error
     // between commanded and current rotation
-    btMatrix3x3 m_dRot;
-    cMatrix3d m_dRot_cvec;
+    cMatrix3d m_Re;
 
     // Flag to enable disable this controller
     bool m_enabled;
+
+    // Flag to check if computeoutput called for the first time.
+    bool m_P_initialized = false, m_R_initialized = false;
 };
 
 

@@ -341,7 +341,7 @@ cVector3d to_cVector3d(const afVector3d &vec){
     return afConversions::convertDataType<cVector3d, afVector3d>(vec);
 }
 
-cTransform to_cMatrix3d(const btMatrix3x3 &mat){
+cMatrix3d to_cMatrix3d(const btMatrix3x3 &mat){
     return afConversions::convertDataType<cMatrix3d, btMatrix3x3>(mat);
 }
 

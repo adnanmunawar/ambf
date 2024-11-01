@@ -609,10 +609,8 @@ void afComm::setGlobalNamespacePrefix(string a_global_namespace_prefix){
 /// \brief afCartesianController::afCartesianController
 ///
 afCartesianController::afCartesianController(){
-    m_dPos.setValue(0, 0, 0);
-    m_dPos_cvec.set(0, 0, 0);
-    m_dRot.setIdentity();
-    m_dRot_cvec.identity();
+    m_Pe.set(0, 0, 0);
+    m_Re.identity();
     m_enabled = false;
 }
 
@@ -667,69 +665,6 @@ void afCartesianController::setOutputType(afControlType type)
     m_orientationOutputType = type;
 }
 
-template <>
-///
-/// \brief afCartesianController::computeOutput ts is the time_scale and computed as a fraction of fixed time-step (dt-fixed) and dynamic time-step (dt)
-/// \param process_val
-/// \param set_point
-/// \param dt
-/// \param ts
-/// \return
-///
-btVector3 afCartesianController::computeOutput<btVector3, btVector3>(const btVector3 &process_val, const btVector3 &set_point, const double &dt, const double &ts){
-    btVector3 output(0, 0, 0); // Initialize the output to zero
-    if (isEnabled()){
-        btVector3 dPos_prev, ddPos;
-        dPos_prev = m_dPos;
-        m_dPos = set_point - process_val;
-        ddPos = (m_dPos - dPos_prev) / dt;
-
-        output = P_lin * (m_dPos) * ts + D_lin * (ddPos);
-    }
-    else{
-        // Maybe throw a console warning to notify the user that this controller is disabled
-    }
-    return output;
-}
-
-
-template<>
-///
-/// \brief afCartesianController::computeOutput
-/// \param process_val
-/// \param set_point
-/// \param dt
-/// \param ts
-/// \return
-///
-btVector3 afCartesianController::computeOutput<btVector3, btMatrix3x3>(const btMatrix3x3 &process_val, const btMatrix3x3 &set_point, const double &dt, const double &ts){
-    btVector3 output(0, 0, 0);
-
-    if (isEnabled()){
-        btVector3 error_cur, error_prev;
-        btMatrix3x3 dRot_prev;
-        btQuaternion dRotQuat, dRotQuat_prev;
-        dRot_prev = m_dRot;
-        dRot_prev.getRotation(dRotQuat_prev);
-        error_prev = dRotQuat_prev.getAxis() * dRotQuat_prev.getAngle();
-
-        m_dRot = process_val.transpose() * set_point;
-        m_dRot.getRotation(dRotQuat);
-        error_cur = dRotQuat.getAxis() * dRotQuat.getAngle();
-
-        output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
-
-        // Important to transform the torque in the world frame as its represented
-        // in the body frame from the above computation
-        output = process_val * output;
-    }
-    else{
-        // Maybe throw a console warning to notify the user that this controller is disabled
-    }
-
-    return output;
-}
-
 template<>
 ///
 /// \brief afCartesianController::computeOutput_cvec
@@ -741,15 +676,21 @@ template<>
 cVector3d afCartesianController::computeOutput<cVector3d, cVector3d>(const cVector3d &process_val, const cVector3d &set_point, const double &dt, const double &ts){
     cVector3d output(0, 0, 0);
     if (isEnabled()){
-        cVector3d dPos_prev, ddPos;
-        dPos_prev = m_dPos_cvec;
-        m_dPos_cvec = set_point - process_val;
-        ddPos = (m_dPos_cvec - dPos_prev) / dt;
+        cVector3d Pe_prev, delta_Pe;
+        Pe_prev = m_Pe;
+        m_Pe = set_point - process_val;
 
-        output = P_lin * (m_dPos_cvec) * ts + D_lin * (ddPos);
+        delta_Pe = (m_Pe - Pe_prev);
+
+        if (m_P_initialized){
+            delta_Pe.zero();;
+            m_P_initialized = true;
+        }
+
+        output = (P_lin * m_Pe * ts) + (D_lin * delta_Pe / dt);
     }
     else{
-        // Maybe throw a console warning to notify the user that this controller is disabled
+        cerr << "WARNING! CARTESIAN CONTROLLER NOT ENABLED" << endl;
     }
     return output;
 }
@@ -765,28 +706,62 @@ template<>
 cVector3d afCartesianController::computeOutput<cVector3d, cMatrix3d>(const cMatrix3d &process_val, const cMatrix3d &set_point, const double &dt, const double &ts){
     cVector3d output(0, 0, 0);
     if (isEnabled()){
-        cVector3d error_cur, error_prev;
-        cMatrix3d dRot_prev;
+        cVector3d Pe, Pe_prev, delta_Re;
+        cMatrix3d Re_prev;
         cVector3d e_axis, e_axis_prev;
         double e_angle, e_angle_prev;
-        dRot_prev = m_dRot_cvec;
-        dRot_prev.toAxisAngle(e_axis_prev, e_angle_prev);
-        error_prev = e_axis_prev * e_angle_prev;
+        Re_prev = m_Re;
+        Re_prev.toAxisAngle(e_axis_prev, e_angle_prev);
+        Pe_prev = e_axis_prev * e_angle_prev;
 
-        m_dRot_cvec = cTranspose(process_val) * set_point;
-        m_dRot_cvec.toAxisAngle(e_axis, e_angle);
-        error_cur = e_axis * e_angle;
+        m_Re = cTranspose(process_val) * set_point;
+        m_Re.toAxisAngle(e_axis, e_angle);
+        Pe = e_axis * e_angle;
 
-        output = (P_ang * error_cur * ts) + (D_ang * (error_cur - error_prev) / dt);
+        delta_Re = (Pe - Pe_prev);
+
+        if (m_R_initialized){
+            delta_Re.zero();
+            m_R_initialized = true;
+        }
+
+        output = (P_ang * Pe * ts) + (D_ang * delta_Re / dt);
 
         // Important to transform the torque in the world frame as its represented
         // in the body frame from the above computation
         output = process_val * output;
     }
     else{
-        // Maybe throw a console warning to notify the user that this controller is disabled
+        cerr << "WARNING! CARTESIAN CONTROLLER NOT ENABLED" << endl;
     }
     return output;
+}
+
+template <>
+///
+/// \brief afCartesianController::computeOutput ts is the time_scale and computed as a fraction of fixed time-step (dt-fixed) and dynamic time-step (dt)
+/// \param process_val
+/// \param set_point
+/// \param dt
+/// \param ts
+/// \return
+///
+btVector3 afCartesianController::computeOutput<btVector3, btVector3>(const btVector3 &process_val, const btVector3 &set_point, const double &dt, const double &ts){
+    return to_btVector(computeOutput<cVector3d, cVector3d>(to_cVector3d(process_val), to_cVector3d(set_point), dt, ts));
+}
+
+
+template<>
+///
+/// \brief afCartesianController::computeOutput
+/// \param process_val
+/// \param set_point
+/// \param dt
+/// \param ts
+/// \return
+///
+btVector3 afCartesianController::computeOutput<btVector3, btMatrix3x3>(const btMatrix3x3 &process_val, const btMatrix3x3 &set_point, const double &dt, const double &ts){
+    return to_btVector(computeOutput<cVector3d, cMatrix3d>(to_cMatrix3d(process_val), to_cMatrix3d(set_point), dt, ts));
 }
 
 template<>
@@ -3401,15 +3376,17 @@ btSoftBody* afSoftBody::createFromMesh(btSoftBodyWorldInfo* worldInfo, cMesh *a_
 
 
 ///
-/// \brief afController::computeOutput
-/// \param process_val
-/// \param set_point
-/// \param current_time
-/// \return
+/// \brief afJointController::afJointController
 ///
 afJointController::afJointController(){
 }
 
+
+///
+/// \brief afJointController::createFromAttribs
+/// \param a_attribs
+/// \return
+///
 bool afJointController::createFromAttribs(afJointControllerAttributes *a_attribs)
 {
     m_P = a_attribs->m_P;
@@ -3421,6 +3398,14 @@ bool afJointController::createFromAttribs(afJointControllerAttributes *a_attribs
     return true;
 }
 
+
+///
+/// \brief afJointController::computeOutput
+/// \param process_val
+/// \param set_point
+/// \param current_time
+/// \return
+///
 double afJointController::computeOutput(double process_val, double set_point, double current_time){
     uint n = queue_length - 1;
     for (uint i = 0 ; i < n ; i++){
