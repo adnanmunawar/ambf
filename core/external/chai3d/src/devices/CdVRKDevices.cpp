@@ -509,7 +509,7 @@ bool cDvrkDevice::setForceAndTorqueAndGripperForce(const cVector3d& a_force,
 
     double gf = a_gripperForce;
 
-    mtm_device->set_wrench(fx, fy, fz, 0, 0, 0);
+    mtm_device->set_wrench(fx, fy, fz, tx, ty, tz);
     // setForceToMyDevice(fx, fy, fz);
     // setTorqueToMyDevice(tx, ty, tz);
     // setForceToGripper(fg);
