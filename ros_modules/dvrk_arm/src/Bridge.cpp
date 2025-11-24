@@ -41,6 +41,7 @@
 //==============================================================================
 
 #include "dvrk_arm/Bridge.h"
+#include "std_msgs/Empty.h"
 
 
 DVRK_Bridge::DVRK_Bridge(const std::string &arm_name, int bridge_frequency): _freq(bridge_frequency){
@@ -94,6 +95,7 @@ void DVRK_Bridge::init(){
     servo_cf_pub = n->advertise<geometry_msgs::WrenchStamped>(_namespace + "/body/servo_cf", 10);
     force_orientation_lock_pub = n->advertise<std_msgs::Bool>(_namespace + "/body/set_cf_orientation_absolute", 10);
     gravity_comp_ena_pub = n->advertise<std_msgs::Bool>(_namespace + "/use_gravity_compensation", 1);
+    hold_pub = n->advertise<std_msgs::Empty>(_namespace + "/hold", 1);
 
     activeState = DVRK_UNINITIALIZED;
     _gripper_closed = false;
@@ -161,21 +163,21 @@ void DVRK_Bridge::run(){
     while (n->ok() && _on){
         cb_queue.callAvailable();
         run_loop_rate->sleep();
-        if(_start_pubs == true){
-            switch (activeState) {
-            case DVRK_POSITION_JOINT:
-                servo_jp_pub.publish(cmd_joint);
-                break;
-            case DVRK_POSITION_CARTESIAN:
-                servo_cp_pub.publish(cmd_pose);
-                break;
-            case DVRK_EFFORT_CARTESIAN:
-                servo_cf_pub.publish(cmd_wrench);
-                break;
-            default:
-                break;
-            }
-        }
+        // if(_start_pubs == true){
+        //     switch (activeState) {
+        //     case DVRK_POSITION_JOINT:
+        //         servo_jp_pub.publish(cmd_joint);
+        //         break;
+        //     case DVRK_POSITION_CARTESIAN:
+        //         servo_cp_pub.publish(cmd_pose);
+        //         break;
+        //     case DVRK_EFFORT_CARTESIAN:
+        //         servo_cf_pub.publish(cmd_wrench);
+        //         break;
+        //     default:
+        //         break;
+        //     }
+        // }
     }
 }
 
@@ -198,12 +200,14 @@ void DVRK_Bridge::set_cur_mode(const std::string &state, bool lock_ori){
 void DVRK_Bridge::servo_cp(const geometry_msgs::PoseStamped &pose){
     cmd_pose = pose;
     activeState = DVRK_POSITION_CARTESIAN;
+    servo_cp_pub.publish(cmd_pose);
     _start_pubs = true;
 }
 
 void DVRK_Bridge::servo_cf(const geometry_msgs::Wrench &wrench){
     cmd_wrench.wrench = wrench;
     activeState = DVRK_EFFORT_CARTESIAN;
+    servo_cf_pub.publish(cmd_wrench);
     _start_pubs = true;
     wrench_loop_max_rate->sleep();
 }
@@ -211,6 +215,7 @@ void DVRK_Bridge::servo_cf(const geometry_msgs::Wrench &wrench){
 void DVRK_Bridge::servo_jp(const sensor_msgs::JointState &jnt_state){
     cmd_joint = jnt_state;
     activeState = DVRK_POSITION_JOINT;
+    servo_jp_pub.publish(cmd_joint);
     _start_pubs = true;
 }
 
@@ -289,6 +294,8 @@ bool DVRK_Bridge::shutDown(){
 //    ros::shutdown();
     usleep(100000);
     loop_thread->interrupt();
+    std_msgs::Empty empty_msg;
+    hold_pub.publish(empty_msg);
 //    loop_thread.reset();
 
     std::cerr<<"Shutdown called for: "<< arm_name <<std::endl;
